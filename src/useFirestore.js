@@ -1,5 +1,16 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot, query, doc, addDoc, deleteDoc, updateDoc, getDocs, setDoc, runTransaction } from 'firebase/firestore';
+import { 
+  collection, 
+  doc, 
+  getDoc, 
+  getDocs, 
+  setDoc, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  onSnapshot 
+} from 'firebase/firestore';
 import { db } from './firebase';
 
 // --- ESCUDO ANTI-UNDEFINED (REGRA DE OURO) ---
@@ -314,4 +325,93 @@ export const removerInstrumento = async (contratoId, instrumentoId, perfilLogado
   const instRef = doc(db, 'contratos', contratoId, 'instrumentos', instrumentoId);
   await deleteDoc(instRef);
   await atualizarStatusContrato(contratoId);
+};
+
+// --- MOTOR DE REGRAS DE NEGÓCIO DA DAC/SOP ---
+export const sincronizarPrazosEValores = async (contratoId) => {
+  const contratoRef = doc(db, 'contratos', contratoId);
+  const instRef = collection(db, 'contratos', contratoId, 'instrumentos');
+  
+  const snapInst = await getDocs(instRef);
+  const listaInstrumentos = snapInst.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  // REGRA 1: [NÃO ATRIBUÍDO] - Se não houver nenhum instrumento relacionado
+  if (listaInstrumentos.length === 0) {
+    await updateDoc(contratoRef, {
+      vigenciaOficial: null,
+      valorTotal: 0,
+      statusContrato: '[NÃO ATRIBUÍDO]',
+      diasRestantes: null
+    });
+    return;
+  }
+
+  // Converter datas e filtrar instrumentos válidos com data
+  const instrumentosComData = listaInstrumentos.map(inst => {
+    let dataProd = null;
+    if (inst.dataVigencia) {
+      dataProd = inst.dataVigencia.toDate ? inst.dataVigencia.toDate() : new Date(inst.dataVigencia);
+    }
+    return { ...inst, dataConvertida: dataProd };
+  }).filter(inst => inst.dataConvertida !== null);
+
+  if (instrumentosComData.length === 0) return;
+
+  // LÓGICA DA VIGÊNCIA: Identificar a MAIOR vigência entre os instrumentos
+  const instrumentoMaisLongo = instrumentosComData.reduce((maior, atual) => {
+    return atual.dataConvertida > maior.dataConvertida ? atual : maior;
+  }, instrumentosComData[0]);
+
+  const maiorVigencia = instrumentoMaisLongo.dataConvertida;
+
+  // LÓGICA DO VALOR: "A mesma lógica será utilizada para o valor"
+  // Captura o valor do instrumento que determinou a maior vigência (o aditivo/apostilamento mais recente)
+  const valorEfetivo = parseFloat(instrumentoMaisLongo.valor || 0);
+
+  // CÁLCULO DOS DIAS RESTANTES (Baseado no dia de HOJE)
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  
+  const vigenciaZerada = new Date(maiorVigencia);
+  vigenciaZerada.setHours(0,0,0,0);
+
+  const diffTime = vigenciaZerada - hoje;
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  let statusCalculado = '[VIGENTE]';
+  
+  // REGRA 2: [NÃO VIGENTE] - Quando a vigência for menor que hoje
+  if (diffDays < 0) {
+    statusCalculado = '[NÃO VIGENTE]';
+  } 
+  // REGRA 3: [VIGENTE <XX] - Quando faltarem menos de 90 dias
+  else if (diffDays <= 90) {
+    statusCalculado = `[VIGENTE < ${diffDays} DIAS]`;
+  }
+
+  // Grava tudo mastigado de volta no contrato pai
+  await updateDoc(contratoRef, {
+    vigenciaOficial: maiorVigencia,
+    valorTotal: valorEfetivo,
+    statusContrato: statusCalculado,
+    diasRestantes: diffDays
+  });
+};
+
+// --- FUNÇÃO PARA TOCAR O FLAG REVISADO RAPIDAMENTE VIA GRID ---
+export const alternarRevisadoContrato = async (contratoId, statusAtual) => {
+  const contratoRef = doc(db, 'contratos', contratoId);
+  await updateDoc(contratoRef, {
+    revisado: !statusAtual,
+    atualizadoEm: new Date()
+  });
+};
+
+// --- FUNÇÃO PARA TOCAR O FLAG EM RENOVAÇÃO VIA MODAL/GRID ---
+export const alternarRenovacaoContrato = async (contratoId, statusAtual) => {
+  const contratoRef = doc(db, 'contratos', contratoId);
+  await updateDoc(contratoRef, {
+    emRenovacao: !statusAtual,
+    atualizadoEm: new Date()
+  });
 };

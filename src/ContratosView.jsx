@@ -1,7 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
-import { useContratos, adicionarContrato, removerFiscal, adicionarInstrumento, removerInstrumento, adicionarFiscal } from './useFirestore';
+import { 
+  useContratos, 
+  adicionarContrato, 
+  removerFiscal, 
+  adicionarInstrumento, 
+  removerInstrumento,
+  alternarRevisadoContrato,
+  alternarRenovacaoContrato
+} from './useFirestore';
 import ModalFiscal from './ModalFiscal';
 import ModalInstrumento from './ModalInstrumento';
 import ModalContrato from './ModalContrato';
@@ -24,12 +32,6 @@ export default function ContratosView() {
   const [showModalInstrumento, setShowModalInstrumento] = useState(false);
   const [showModalContrato, setShowModalContrato] = useState(false);
 
-  const formatarDataExibicao = (timestamp) => {
-    if (!timestamp) return '-';
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    return date.toLocaleDateString('pt-BR');
-  };
-
   const fetchDetalhes = async () => {
     if (!contratoSelecionado) return;
     setLoadingDetalhes(true);
@@ -51,16 +53,26 @@ export default function ContratosView() {
   }, [contratoSelecionado]);
 
   const contratosFiltrados = contratos.filter(c => {
-    // Busca livre agora pesquisa também dentro da Descrição e do Objeto
+    // Normaliza o status para caixa baixa para evitar conflito de maiúsculas/minúsculas
+    const statusLimpo = (c.statusContrato || c.estagio || '').toLowerCase();
+    
     const matchBusca = (c.fornecedorNome?.toLowerCase() || '').includes(busca.toLowerCase()) || 
                        (c.descricao?.toLowerCase() || '').includes(busca.toLowerCase()) ||
                        (c.objeto?.toLowerCase() || '').includes(busca.toLowerCase());
                        
     const matchProa = (c.proaOriginal || c.id).includes(filtroProa);
     const matchForn = (c.fornecedorNome?.toLowerCase() || '').includes(filtroForn.toLowerCase());
+    
+    // --- NOVA INTELIGÊNCIA DE FILTRAGEM POR STATUS DA DAC ---
     const matchStatus = filtroStatus === 'Todos' || 
-                        (filtroStatus === 'Vigente' && c.estagio?.toLowerCase().includes('vigente') && !c.estagio?.toLowerCase().includes('não')) ||
-                        (filtroStatus === 'Encerrado' && (!c.estagio?.toLowerCase().includes('vigente') || c.estagio?.toLowerCase().includes('não')));
+                        // Filtra tudo que está ativo (regras normais e alertas de prazo)
+                        (filtroStatus === 'Vigente' && statusLimpo.includes('vigente') && !statusLimpo.includes('não')) ||
+                        // Filtra cirurgicamente apenas os contratos críticos com menos de 90 dias restante
+                        (filtroStatus === 'Alerta' && statusLimpo.includes('<')) ||
+                        // Filtra contratos vencidos ou legados encerrados
+                        (filtroStatus === 'NaoVigente' && (statusLimpo.includes('não vigente') || statusLimpo.includes('encerrado'))) ||
+                        // Filtra contratos novos que ainda não possuem nenhum termo/instrumento
+                        (filtroStatus === 'NaoAtribuido' && statusLimpo.includes('não atribuído'));
     
     return matchBusca && matchProa && matchForn && matchStatus;
   });
@@ -71,6 +83,7 @@ export default function ContratosView() {
   return (
     <div className="flex flex-col h-full bg-bg-body overflow-hidden">
       
+      {/* SEÇÃO DE FILTROS */}
       <section className="flex gap-4 px-[25px] py-4 bg-bg-surface border-b border-bg-hover shrink-0">
         <div className="flex flex-col gap-2 flex-[2]">
           <label className="text-xs text-text-secondary uppercase tracking-widest font-bold">Busca Livre</label>
@@ -89,15 +102,23 @@ export default function ContratosView() {
         </div>
         <div className="flex flex-col gap-2 flex-1">
           <label className="text-xs text-text-secondary uppercase tracking-widest font-bold">Status</label>
-          <select value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}
-            className="p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-green text-sm w-full">
-            <option>Todos</option><option>Vigente</option><option>Encerrado</option>
+          <select 
+            value={filtroStatus} 
+            onChange={e => setFiltroStatus(e.target.value)}
+            className="p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-green text-sm w-full font-medium"
+          >
+            <option value="Todos">Todos os Contratos</option>
+            <option value="Vigente">Vigentes (Geral)</option>
+            <option value="Alerta">Em Alerta (⏱️ &lt; 90 Dias)</option>
+            <option value="NaoVigente">Não Vigentes (Vencidos)</option>
+            <option value="NaoAtribuido">Não Atribuídos (Sem Instrumento)</option>
           </select>
-        </div>
-      </section>
+        </div>      </section>
 
+      {/* DASHBOARD GRID */}
       <div className="p-[25px] grid gap-[25px] flex-1 overflow-hidden" style={{ gridTemplateColumns: '1fr 1fr', gridTemplateRows: '55% minmax(0, 1fr)' }}>
         
+        {/* TABELA PRINCIPAL DE CONTRATOS */}
         <div className="col-span-2 bg-bg-surface border border-bg-hover shadow-lg rounded-xl flex flex-col overflow-hidden">
           <div className="px-5 bg-white/5 border-b border-bg-hover flex justify-between items-center h-[60px] shrink-0">
             <div className="flex items-center gap-2 font-semibold text-text-primary">
@@ -105,13 +126,13 @@ export default function ContratosView() {
               <span className="text-xs bg-bg-body px-2.5 py-1 rounded-full text-text-secondary font-normal ml-2">{contratosFiltrados.length} Itens</span>
             </div>
             <div className="flex gap-2">
-            <button 
-              disabled={!contratoSelecionado}
-              onClick={() => setShowModalContrato('alterar')}
-              className="px-4 py-1.5 bg-transparent border border-text-secondary text-text-secondary rounded text-sm font-semibold hover:border-text-primary hover:text-text-primary transition-colors disabled:opacity-40"
-            >
-              <i className="fas fa-pen mr-2"></i> Alterar
-            </button>
+              <button 
+                disabled={!contratoSelecionado}
+                onClick={() => setShowModalContrato('alterar')}
+                className="px-4 py-1.5 bg-transparent border border-text-secondary text-text-secondary rounded text-sm font-semibold hover:border-text-primary hover:text-text-primary transition-colors disabled:opacity-40"
+              >
+                <i className="fas fa-pen mr-2"></i> Alterar
+              </button>
               <button 
                 onClick={() => setShowModalContrato(true)}
                 className="px-4 py-1.5 bg-sop-green text-white rounded text-sm font-semibold hover:bg-sop-green/90 transition-colors"
@@ -125,72 +146,122 @@ export default function ContratosView() {
             <table className="w-full text-left text-sm border-collapse table-auto">
               <thead className="bg-bg-surface text-text-secondary text-[11px] uppercase tracking-wider sticky top-0 z-10 shadow-sm">
                 <tr>
-                  <th className="py-3 px-4 border-b border-bg-hover font-bold whitespace-nowrap w-[180px]">PROA</th>
-                  <th className="py-3 px-4 border-b border-bg-hover font-bold whitespace-nowrap w-[120px]">FPE</th>
-                  <th className="py-3 px-4 border-b border-bg-hover font-bold min-w-[280px]">Objeto</th>
-                  <th className="py-3 px-4 border-b border-bg-hover font-bold whitespace-nowrap w-[160px]">Classificação</th>
-                  <th className="py-3 px-4 border-b border-bg-hover font-bold whitespace-nowrap w-[160px]">Tipo de Serviço</th>
-                  <th className="py-3 px-4 border-b border-bg-hover font-bold min-w-[200px]">Contratada</th>
-                  <th className="py-3 px-4 border-b border-bg-hover font-bold whitespace-nowrap w-[110px]">Vigência</th> 
-                  <th className="py-3 px-4 border-b border-bg-hover font-bold text-center w-[120px]">Estágio</th>
+                  <th className="py-3 px-2 border-b border-bg-hover text-center w-[50px] font-bold">Rev.</th>
+                  <th className="py-3 px-4 border-b border-bg-hover font-bold whitespace-nowrap w-[140px]">PROA</th>
+                  <th className="py-3 px-4 border-b border-bg-hover font-bold whitespace-nowrap w-[110px]">FPE</th>
+                  <th className="py-3 px-4 border-b border-bg-hover font-bold min-w-[220px]">Objeto</th>
+                  <th className="py-3 px-4 border-b border-bg-hover font-bold whitespace-nowrap w-[140px]">Classificação</th>
+                  <th className="py-3 px-4 border-b border-bg-hover font-bold whitespace-nowrap w-[130px]">Tipo Serviço</th>
+                  <th className="py-3 px-4 border-b border-bg-hover font-bold min-w-[180px]">Contratada</th>
+                  <th className="py-3 px-4 border-b border-bg-hover font-bold text-right w-[130px]">Valor Total</th>
+                  <th className="py-3 px-4 border-b border-bg-hover font-bold whitespace-nowrap w-[100px]">Vigência</th> 
+                  <th className="py-3 px-4 border-b border-bg-hover font-bold text-center w-[150px]">Estágio</th>
+                  <th className="py-3 px-4 border-b border-bg-hover font-bold text-center w-[110px]">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {contratosFiltrados.length === 0 ? (
                   <tr>
-                    <td colSpan="8" className="py-12 text-center text-text-muted italic">
+                    <td colSpan="11" className="py-12 text-center text-text-muted italic">
                       Nenhum contrato encontrado com os filtros aplicados.
                     </td>
                   </tr>
                 ) : (
-                  contratosFiltrados.map(c => {
-                    const isSelected = contratoSelecionado?.id === c.id;
+                  contratosFiltrados.map((c) => {
+                    const isSelecionado = contratoSelecionado?.id === c.id;
+                    
+                    const linhaEstilo = c.emRenovacao 
+                      ? 'bg-amber-500/10 hover:bg-amber-500/25 text-amber-600 border-l-4 border-l-amber-500 font-medium' 
+                      : isSelecionado
+                        ? 'bg-sop-blue/10 text-text-primary border-b border-bg-hover font-medium'
+                        : 'hover:bg-bg-hover text-text-primary border-b border-bg-hover';
+
+                    const obterEstiloStatus = (status) => {
+                      if (!status) return 'bg-bg-body text-text-secondary';
+                      if (status.includes('NÃO VIGENTE')) return 'bg-sop-red/20 text-sop-red font-bold animate-pulse';
+                      if (status.includes('<')) return 'bg-amber-500/20 text-amber-600 font-semibold';
+                      if (status.includes('NÃO ATRIBUÍDO')) return 'bg-text-muted/20 text-text-muted italic';
+                      return 'bg-sop-green/20 text-sop-green font-medium';
+                    };
+
                     return (
                       <tr 
-                        key={c.id}
-                        onClick={() => setContratoSelecionado(isSelected ? null : c)}
-                        className={`cursor-pointer transition-colors border-b border-bg-hover group text-xs ${
-                          isSelected ? 'bg-sop-blue/10 border-l-[3px] border-l-sop-blue' : 'hover:bg-bg-hover border-l-[3px] border-l-transparent'
-                        }`}
+                        key={c.id} 
+                        onClick={() => setContratoSelecionado(c)}
+                        className={`transition-all duration-150 cursor-pointer ${linhaEstilo}`}
                       >
-                        {/* 1. PROA */}
-                        <td className="py-3 px-4 font-mono text-text-secondary whitespace-nowrap">{c.proaOriginal}</td>
-                        
-                        {/* 2. FPE */}
-                        <td className="py-3 px-4 font-mono text-text-secondary whitespace-nowrap">{c.fpe || '-'}</td>
-                        
-                        {/* 3. Objeto (Exibindo a Descrição Completa do Escopo com balão de ajuda ao passar o mouse) */}
-                        <td className="py-3 px-4 text-text-primary font-medium max-w-sm truncate" title={c.descricao || c.objeto}>
-                          {c.descricao || c.objeto || '-'}
+                        {/* COLUNA 1: FLAG REVISADO */}
+                        <td className="py-3 px-2 text-center" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            title={c.revisado ? "Contrato Homologado" : "Pendente de Revisão"}
+                            onClick={async () => {
+                              try {
+                                await alternarRevisadoContrato(c.id, !!c.revisado);
+                              } catch (err) {
+                                alert("Erro ao salvar revisão: " + err.message);
+                              }
+                            }}
+                            className={`text-sm transition-transform active:scale-95 ${c.revisado ? 'text-sop-green' : 'text-text-muted hover:text-sop-blue'}`}
+                          >
+                            <i className={c.revisado ? "fas fa-check-circle" : "far fa-circle"}></i>
+                          </button>
                         </td>
+
+                        {/* COLUNA 2: PROA */}
+                        <td className="py-3 px-4 font-mono font-bold text-xs">{c.proaOriginal || c.id}</td>
                         
-                        {/* 3. Classificação */}
-                        <td className="py-3 px-4 text-text-secondary whitespace-nowrap truncate max-w-[160px]" title={c.classificacao || (c.importadoDoCsv ? c.objeto : '')}>
+                        {/* COLUNA 3: FPE */}
+                        <td className="py-3 px-4 font-mono text-xs text-text-secondary">{c.fpe || '-'}</td>
+
+                        {/* COLUNA 4: OBJETO REAL (Fallback inteligente) */}
+                        <td className="py-3 px-4 text-xs max-w-xs truncate" title={c.objeto || c.descricao}>
+                          {c.objeto || c.descricao || '-'}
+                        </td>
+
+                        {/* COLUNA 5: CLASSIFICAÇÃO (Tratada do CSV) */}
+                        <td className="py-3 px-4 text-xs text-text-secondary truncate max-w-[140px]" title={c.classificacao || (c.importadoDoCsv ? c.objeto : '')}>
                           {c.classificacao || (c.importadoDoCsv ? c.objeto : '-')}
-                        </td>                        
-                        {/* 5. Tipo de Serviço */}
-                        <td className="py-3 px-4 text-text-secondary whitespace-nowrap">{c.tipoServico || '-'}</td>
-                        
-                        {/* 6. Contratada */}
-                        <td className="py-3 px-4 text-text-primary uppercase max-w-xs truncate" title={c.fornecedorNome}>
+                        </td>
+
+                        {/* COLUNA 6: TIPO DE SERVIÇO */}
+                        <td className="py-3 px-4 text-xs text-text-secondary">{c.tipoServico || '-'}</td>
+
+                        {/* COLUNA 7: CONTRATADA */}
+                        <td className="py-3 px-4 text-xs truncate max-w-[180px]" title={c.fornecedorNome}>
                           {c.fornecedorNome || '-'}
                         </td>
-                        
-                        {/* 7. Vigência */}
-                        <td className="py-3 px-4 text-text-primary font-medium whitespace-nowrap">
-                          {formatarDataExibicao(c.vigenciaOficial)}
+
+                        {/* COLUNA 8: VALOR TOTAL AGREGADO */}
+                        <td className="py-3 px-4 font-mono text-xs text-right font-semibold">
+                          {c.valorTotal 
+                            ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(c.valorTotal) 
+                            : 'R$ 0,00'}
                         </td>
-                        
-                        {/* 8. Estágio */}
-                        <td className="py-3 px-4 text-center whitespace-nowrap">
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                            c.estagio === 'Vigente' ? 'bg-sop-green/20 text-sop-green' :
-                            c.estagio === 'Vencendo' ? 'bg-sop-yellow/20 text-sop-yellow-dark' :
-                            c.estagio === 'Não vigente' ? 'bg-sop-red/20 text-sop-red' :
-                            'bg-text-muted/20 text-text-secondary'
-                          }`}>
-                            {c.estagio || 'Sem Instrumentos'}
+
+                        {/* COLUNA 9: VIGÊNCIA CALCULADA */}
+                        <td className="py-3 px-4 font-mono text-xs text-center">
+                          {c.vigenciaOficial
+                            ? (c.vigenciaOficial.toDate ? c.vigenciaOficial.toDate() : new Date(c.vigenciaOficial)).toLocaleDateString('pt-BR')
+                            : '-'}
+                        </td>
+
+                        {/* COLUNA 10: ESTÁGIO / STATUS DINÂMICO */}
+                        <td className="py-3 px-4 text-center">
+                          <span className={`px-2 py-0.5 rounded text-[10px] uppercase tracking-wider ${obterEstiloStatus(c.statusContrato || c.estagio)}`}>
+                            {c.statusContrato || c.estagio || '[NÃO ATRIBUÍDO]'}
                           </span>
+                        </td>
+
+                        {/* COLUNA 11: ALTERNAR RENOVAÇÃO */}
+                        <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => alternarRenovacaoContrato(c.id, !!c.emRenovacao)}
+                            className={`px-2 py-0.5 rounded text-[9px] font-bold transition-all ${c.emRenovacao ? 'bg-amber-500 text-white' : 'bg-bg-body text-text-secondary border border-bg-hover hover:border-amber-500'}`}
+                          >
+                            {c.emRenovacao ? 'RENOVANDO' : 'RENOVAÇÃO?'}
+                          </button>
                         </td>
                       </tr>
                     );
@@ -201,6 +272,7 @@ export default function ContratosView() {
           </div>
         </div>
 
+        {/* PAINEL DE INSTRUMENTOS */}
         <div className="bg-bg-surface border border-bg-hover shadow-lg rounded-xl flex flex-col overflow-hidden">
           <div className="px-5 bg-white/5 border-b border-bg-hover border-l-4 border-l-sop-yellow flex justify-between items-center h-[60px] shrink-0">
             <div className="font-semibold text-text-primary flex items-center">
@@ -241,11 +313,11 @@ export default function ContratosView() {
                         <span className="text-[11px] text-text-secondary font-normal">{inst.identificacao || '-'}</span>
                       </td>
                       <td className="py-3 px-4 text-text-secondary">
-                        {inst.fimDoContrato ? new Date(inst.fimDoContrato.seconds * 1000).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-'}
+                        {inst.dataVigencia ? formatarDataExibicao(inst.dataVigencia) : inst.fimDoContrato ? new Date(inst.fimDoContrato.seconds * 1000).toLocaleDateString('pt-BR') : '-'}
                       </td>
                       <td className="py-3 px-4 text-right font-mono text-sop-green font-semibold flex justify-end items-center gap-4">
                         <span>
-                          {inst.valorContrato ? `R$ ${Number(inst.valorContrato).toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : '-'}
+                          {inst.valor ? `R$ ${Number(inst.valor).toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : inst.valorContrato ? `R$ ${Number(inst.valorContrato).toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : '-'}
                         </span>
                         <button 
                           onClick={async (e) => {
@@ -269,6 +341,7 @@ export default function ContratosView() {
           </div>
         </div>
 
+        {/* PAINEL DE EQUIPE */}
         <div className="bg-bg-surface border border-bg-hover shadow-lg rounded-xl flex flex-col overflow-hidden">
           <div className="px-5 bg-white/5 border-b border-bg-hover border-l-4 border-l-sop-green flex justify-between items-center h-[60px] shrink-0">
             <div className="font-semibold text-text-primary flex items-center">
@@ -287,7 +360,7 @@ export default function ContratosView() {
               <thead className="bg-bg-surface text-text-secondary text-[11px] uppercase tracking-wider sticky top-0 shadow-sm">
                 <tr>
                   <th className="py-3 px-4 border-b border-bg-hover">Função</th>
-                  <th className="py-3 px-4 border-b border-bg-hover">Nome</th>
+                  <th className="py-3 px-4 border-b border-bg-hover">Nome / Servidor</th>
                 </tr>
               </thead>
               <tbody>
@@ -306,11 +379,14 @@ export default function ContratosView() {
                         </span>
                       </td>
                       <td className="py-3 px-4 text-text-primary flex justify-between items-center">
-                        {fiscal.emailColaborador || '-'}
+                        <div className="flex flex-col">
+                          <span className="font-bold uppercase text-xs">{fiscal.colaborador || fiscal.nome || '-'}</span>
+                          {fiscal.servidorEmail && <span className="text-[10px] text-text-secondary font-mono">{fiscal.servidorEmail}</span>}
+                        </div>
                         <button 
                           onClick={async (e) => {
                             e.stopPropagation();
-                            if(window.confirm(`Remover ${fiscal.emailColaborador || 'este fiscal'} do contrato?`)) {
+                            if(window.confirm(`Remover ${fiscal.colaborador || 'este fiscal'} do contrato?`)) {
                               await removerFiscal(contratoSelecionado.id, fiscal.id);
                               fetchDetalhes();
                             }
@@ -331,6 +407,7 @@ export default function ContratosView() {
 
       </div>
 
+      {/* MODAIS DO SISTEMA */}
       {showModalFiscal && (
         <ModalFiscal 
           contratoId={contratoSelecionado.id} 
@@ -351,11 +428,11 @@ export default function ContratosView() {
         <ModalContrato 
           contratoEdit={showModalContrato === 'alterar' ? contratoSelecionado : null}
           onClose={() => {
-          setShowModalContrato(false);
-          setContratoSelecionado(null); // Limpa a seleção da linha ao fechar para segurança
-      }}
-  />
-)}
+            setShowModalContrato(false);
+            setContratoSelecionado(null);
+          }}
+        />
+      )}
 
     </div>
   );
