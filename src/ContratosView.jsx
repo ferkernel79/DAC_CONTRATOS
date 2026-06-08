@@ -13,6 +13,7 @@ import {
 import ModalFiscal from './ModalFiscal';
 import ModalInstrumento from './ModalInstrumento';
 import ModalContrato from './ModalContrato';
+import { exportarParaExcel, exportarParaPDF } from './exportUtils';
 
 export default function ContratosView() {
   
@@ -126,19 +127,41 @@ export default function ContratosView() {
               <span className="text-xs bg-bg-body px-2.5 py-1 rounded-full text-text-secondary font-normal ml-2">{contratosFiltrados.length} Itens</span>
             </div>
             <div className="flex gap-2">
-              <button 
-                disabled={!contratoSelecionado}
-                onClick={() => setShowModalContrato('alterar')}
-                className="px-4 py-1.5 bg-transparent border border-text-secondary text-text-secondary rounded text-sm font-semibold hover:border-text-primary hover:text-text-primary transition-colors disabled:opacity-40"
-              >
-                <i className="fas fa-pen mr-2"></i> Alterar
-              </button>
+            <button 
+    onClick={() => {
+      // Aqui você pode opcionalmente passar os históricos de subcoleções se já os tiver carregados,
+      // ou passar arrays vazias para gerar a estrutura base limpa
+      exportarParaExcel(contratosFiltrados, [], []);
+    }}
+    className="px-3 py-1.5 bg-emerald-600 text-white rounded text-sm font-semibold hover:bg-emerald-700 transition-colors"
+    title="Exportar listagem atual para Excel (.xlsx)"
+  >
+    <i className="fas fa-file-excel mr-2"></i> Exportar Excel
+  </button>
+
+  {/* BOTÃO PDF */}
+  <button 
+    onClick={() => exportarParaPDF(contratosFiltrados)}
+    className="px-3 py-1.5 bg-sop-red text-white rounded text-sm font-semibold hover:bg-sop-red/90 transition-colors"
+    title="Imprimir Relatório em PDF"
+  >
+    <i className="fas fa-file-pdf mr-2"></i> Exportar PDF
+  </button>
+
+  <button 
+    disabled={!contratoSelecionado}
+    onClick={() => setShowModalContrato('alterar')}
+    className="px-4 py-1.5 bg-transparent border border-text-secondary text-text-secondary rounded text-sm font-semibold hover:border-text-primary hover:text-text-primary transition-colors disabled:opacity-40"
+  >
+    <i className="fas fa-pen mr-2"></i> Alterar
+  </button>  
               <button 
                 onClick={() => setShowModalContrato(true)}
                 className="px-4 py-1.5 bg-sop-green text-white rounded text-sm font-semibold hover:bg-sop-green/90 transition-colors"
               >
                 <i className="fas fa-plus mr-2"></i> Novo Contrato
               </button>
+              
             </div>
           </div>
           
