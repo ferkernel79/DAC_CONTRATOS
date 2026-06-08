@@ -4,10 +4,11 @@ import LoginView from './LoginView';
 import ContratosView from './ContratosView';
 import FornecedoresView from './FornecedoresView';
 import UsuariosView from './UsuariosView'; // Nova View de acessos
+import DashboardView from './DashboardView';
 
 function PainelPrincipalSOP() {
   const { usuarioLogado, perfil, logout } = useAuth();
-  const [abaAtiva, setAbaAtiva] = useState('contratos'); // 'contratos', 'fornecedores', 'usuarios'
+  const [abaAtiva, setAbaAtiva] = useState('dashboard'); // 'ABA INICIAL
 
   return (
     <div className="flex h-screen w-screen bg-bg-body text-text-primary overflow-hidden font-sans">
@@ -39,6 +40,12 @@ function PainelPrincipalSOP() {
 
           {/* Menu de Navegação */}
           <nav className="px-3 space-y-1">
+          <button 
+            onClick={() => setAbaAtiva('dashboard')}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${abaAtiva === 'dashboard' ? 'bg-sop-blue text-white' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'}`}
+          >
+            <i className="fas fa-chart-pie w-5 text-center"></i> Painel Gerencial
+          </button>
             <button 
               onClick={() => setAbaAtiva('contratos')}
               className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${abaAtiva === 'contratos' ? 'bg-sop-blue text-white' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'}`}
@@ -77,6 +84,7 @@ function PainelPrincipalSOP() {
 
       {/* ÁREA DE CONTEÚDO DINÂMICO */}
       <main className="flex-1 h-full overflow-hidden flex flex-col">
+        {abaAtiva === 'dashboard' && <DashboardView />}
         {abaAtiva === 'contratos' && <ContratosView />}
         {abaAtiva === 'fornecedores' && <FornecedoresView />}
         {abaAtiva === 'usuarios' && perfil === 'ADMINISTRADOR' && <UsuariosView />}
