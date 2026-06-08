@@ -167,21 +167,23 @@ export default function ContratosView() {
           
           <div className="flex-1 overflow-auto">
             <table className="w-full text-left text-sm border-collapse table-auto">
-              <thead className="bg-bg-surface text-text-secondary text-[11px] uppercase tracking-wider sticky top-0 z-10 shadow-sm">
-                <tr>
-                  <th className="py-3 px-2 border-b border-bg-hover text-center w-[50px] font-bold">Rev.</th>
-                  <th className="py-3 px-4 border-b border-bg-hover font-bold whitespace-nowrap w-[140px]">PROA</th>
-                  <th className="py-3 px-4 border-b border-bg-hover font-bold whitespace-nowrap w-[110px]">FPE</th>
-                  <th className="py-3 px-4 border-b border-bg-hover font-bold min-w-[220px]">Objeto</th>
-                  <th className="py-3 px-4 border-b border-bg-hover font-bold whitespace-nowrap w-[140px]">Classificação</th>
-                  <th className="py-3 px-4 border-b border-bg-hover font-bold whitespace-nowrap w-[130px]">Tipo Serviço</th>
-                  <th className="py-3 px-4 border-b border-bg-hover font-bold min-w-[180px]">Contratada</th>
-                  <th className="py-3 px-4 border-b border-bg-hover font-bold text-right w-[130px]">Valor Total</th>
-                  <th className="py-3 px-4 border-b border-bg-hover font-bold whitespace-nowrap w-[100px]">Vigência</th> 
-                  <th className="py-3 px-4 border-b border-bg-hover font-bold text-center w-[150px]">Estágio</th>
-                  <th className="py-3 px-4 border-b border-bg-hover font-bold text-center w-[110px]">Ações</th>
-                </tr>
-              </thead>
+            <thead className="bg-bg-surface text-text-secondary text-[11px] uppercase tracking-wider sticky top-0 z-10 shadow-sm">
+              <tr>
+                <th className="py-3 px-2 border-b border-bg-hover text-center w-[45px] font-bold">Rev.</th>
+                {/* PROA blindado contra quebra de linha */}
+                <th className="py-3 px-4 border-b border-bg-hover font-bold whitespace-nowrap w-[170px] min-w-[170px]">PROA</th>
+                <th className="py-3 px-4 border-b border-bg-hover font-bold whitespace-nowrap w-[100px]">FPE</th>
+                {/* Objeto com controle de tamanho */}
+                <th className="py-3 px-4 border-b border-bg-hover font-bold word-break-normal w-[220px] min-w-[250px]">Objeto (Descrição)</th>
+                <th className="py-3 px-4 border-b border-bg-hover font-bold whitespace-nowrap w-[200px]">Classificação</th>
+                <th className="py-3 px-4 border-b border-bg-hover font-bold whitespace-nowrap w-[200px]">Tipo Serviço</th>
+                <th className="py-3 px-4 border-b border-bg-hover font-bold min-w-[160px]">Contratada</th>
+                <th className="py-3 px-4 border-b border-bg-hover font-bold text-right w-[130px]">Valor Total</th>
+                <th className="py-3 px-4 border-b border-bg-hover font-bold text-center w-[100px]">Vigência</th> 
+                <th className="py-3 px-4 border-b border-bg-hover font-bold text-center w-[140px]">Estágio</th>
+                <th className="py-3 px-4 border-b border-bg-hover font-bold text-center w-[100px]">Ações</th>
+              </tr>
+            </thead>
               <tbody>
                 {contratosFiltrados.length === 0 ? (
                   <tr>

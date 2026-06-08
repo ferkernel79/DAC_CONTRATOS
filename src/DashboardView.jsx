@@ -19,49 +19,83 @@ export default function DashboardView() {
 
   if (error) return <div className="p-4 bg-sop-red/20 border border-sop-red text-sop-red rounded-lg m-6">{error}</div>;
 
-  // --- 1. PROCESSAMENTO DE DADOS & MÉTRICAS ---
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
+// --- 1. PROCESSAMENTO DE DADOS & MÉTRICAS (COM FALLBACKS PARA DADOS LEGADOS) ---
+const hoje = new Date();
+hoje.setHours(0, 0, 0, 0);
 
-  // Filtros Base de Estados
-  const contratosVigentes = contratos.filter(c => {
-    const st = (c.statusContrato || '').toUpperCase();
-    return st.includes('VIGENTE') && !st.includes('NÃO');
-  });
+// 1. FILTRO DE VIGENTES: Entende o status novo e o status antigo do CSV
+const contratosVigentes = contratos.filter(c => {
+  const st = (c.statusContrato || c.estagio || '').toUpperCase();
+  return st.includes('VIGENTE') && !st.includes('NÃO VIGENTE');
+});
 
-  const contratosAlerta90 = contratos.filter(c => c.diasRestantes !== null && c.diasRestantes >= 0 && c.diasRestantes <= 90);
-  
-  const valorTotalCarteira = contratosVigentes.reduce((sum, c) => sum + (c.valorTotal || 0), 0);
-  
-  // Métrica de Auditoria (Sugestão para o mutirão de revisão)
-  const totalRevisados = contratos.filter(c => c.revisado).length;
-  const pctRevisado = contratos.length > 0 ? Math.round((totalRevisados / contratos.length) * 100) : 0;
-
-  // --- 2. GRÁFICO 1: DISTRIBUIÇÃO POR CLASSIFICAÇÃO (PIZZA) ---
-  const agrupadoPorClassificacao = contratosVigentes.reduce((acc, c) => {
-    const classe = c.classificacao || (c.importadoDoCsv ? c.objeto : null) || 'Não Categorizado';
-    acc[classe] = (acc[classe] || 0) + 1;
-    return acc;
-  }, {});
-
-  const dadosPizza = Object.keys(agrupadoPorClassificacao).map(key => ({
-    name: key,
-    value: agrupadoPorClassificacao[key]
-  }));
-
-  const CORES_PIZZA = ['#1E3A8A', '#059669', '#D97706', '#7C3AED', '#DC2626', '#2563EB', '#0D9488', '#4B5563'];
-
-  // --- 3. GRÁFICO 2: CRONOGRAMA MÓVEL DE VENCIMENTOS (12 MESES) ---
-  // Gera os próximos 12 meses dinamicamente a partir do mês atual (Ex: Jun/2026)
-  const mesesCronograma = [];
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(hoje.getFullYear(), hoje.getMonth() + i, 1);
-    mesesCronograma.push({
-      key: `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`,
-      label: d.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).toUpperCase(),
-      quantidade: 0
-    });
+// 2. FILTRO DE ALERTAS 90 DIAS: Se não houver o cálculo automático, calcula em tempo real na tela
+const contratosAlerta90 = contratos.filter(c => {
+  if (c.diasRestantes !== undefined && c.diasRestantes !== null) {
+    return c.diasRestantes >= 0 && c.diasRestantes <= 90;
   }
+  
+  // Fallback: Calcula o prazo dinamicamente se o contrato veio do CSV e tem vigência informada
+  const dataVigenciaRaw = c.vigenciaOficial || c.fimDoContrato || c.dataVigencia;
+  if (dataVigenciaRaw) {
+    const dataVenc = dataVigenciaRaw.toDate ? dataVigenciaRaw.toDate() : new Date(dataVigenciaRaw);
+    dataVenc.setHours(0,0,0,0);
+    const diffTime = dataVenc - hoje;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays >= 0 && diffDays <= 90;
+  }
+  return false;
+});
+
+// 3. VALOR TOTAL DA CARTEIRA: Soma o valorTotal calculado ou recorre ao valor original do contrato
+const valorTotalCarteira = contratosVigentes.reduce((sum, c) => {
+  const valorEfetivo = c.valorTotal !== undefined ? c.valorTotal : (c.valor || c.valorContrato || 0);
+  return sum + parseFloat(valorEfetivo || 0);
+}, 0);
+
+// 4. MÉTRICA DO MUTIRÃO DE REVISÃO
+const totalRevisados = contratos.filter(c => c.revisado).length;
+const pctRevisado = contratos.length > 0 ? Math.round((totalRevisados / contratos.length) * 100) : 0;
+
+// --- 2. GRÁFICO 1: DISTRIBUIÇÃO POR CLASSIFICAÇÃO (PIZZA) ---
+const agrupadoPorClassificacao = contratosVigentes.reduce((acc, c) => {
+  // Agrupa usando classificação, objeto ou tipo de serviço como fallbacks sucessivos
+  const classe = c.classificacao || c.tipoServico || (c.importadoDoCsv ? 'Importados (CSV)' : 'Não Categorizado');
+  acc[classe] = (acc[classe] || 0) + 1;
+  return acc;
+}, {});
+
+const dadosPizza = Object.keys(agrupadoPorClassificacao).map(key => ({
+  name: key,
+  value: agrupadoPorClassificacao[key]
+}));
+
+const CORES_PIZZA = ['#1E3A8A', '#059669', '#D97706', '#7C3AED', '#DC2626', '#2563EB', '#0D9488', '#4B5563'];
+
+// --- 3. GRÁFICO 2: CRONOGRAMA MÓVEL DE VENCIMENTOS (12 MESES) ---
+const mesesCronograma = [];
+for (let i = 0; i < 12; i++) {
+  const d = new Date(hoje.getFullYear(), hoje.getMonth() + i, 1);
+  mesesCronograma.push({
+    key: `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`,
+    label: d.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).toUpperCase(),
+    quantidade: 0
+  });
+}
+
+contratos.forEach(c => {
+  const dataVigenciaRaw = c.vigenciaOficial || c.fimDoContrato || c.dataVigencia;
+  if (dataVigenciaRaw) {
+    const dataVenc = dataVigenciaRaw.toDate ? dataVigenciaRaw.toDate() : new Date(dataVigenciaRaw);
+    const mesAnoKey = `${String(dataVenc.getMonth() + 1).padStart(2, '0')}/${dataVenc.getFullYear()}`;
+    
+    const mesAlvo = mesesCronograma.find(m => m.key === mesAnoKey);
+    if (mesAlvo) {
+      mesAlvo.quantidade += 1;
+    }
+  }
+});
+
 
   // Contabiliza os vencimentos dentro do range móvel
   contratos.forEach(c => {
