@@ -8,21 +8,39 @@ export default function ModalInstrumento({ contratoId, instrumentoEdit, onClose,
   const [dataVigencia, setDataVigencia] = useState('');
   const [salvando, setSalvando] = useState(false);
 
-  // Carrega os dados caso seja uma operação de ALTERAÇÃO
-  useEffect(() => {
-    if (instrumentoEdit) {
-      setTipo(instrumentoEdit.tipo || 'Termo Aditivo');
-      setIdentificacao(instrumentoEdit.identificacao || '');
-      setValor(instrumentoEdit.valor || instrumentoEdit.valorContrato || '');
-      
-      // Converte a data do formato Firebase/ISO para o formato aceito pelo input HTML (AAAA-MM-DD)
-      const dataRaw = instrumentoEdit.dataVigencia || instrumentoEdit.fimDoContrato;
-      if (dataRaw) {
-        const dateObj = dataRaw.toDate ? dataRaw.toDate() : new Date(dataRaw);
-        setDataVigencia(dateObj.toISOString().split('T')[0]);
+  
+// Carrega os dados caso seja uma operação de ALTERAÇÃO (COM TRATAMENTO DE MILHAR BR)
+useEffect(() => {
+  if (instrumentoEdit) {
+    setTipo(instrumentoEdit.tipo || 'Termo Aditivo');
+    setIdentificacao(instrumentoEdit.identificacao || '');
+    
+    // --- CAPTURA E SANITIZAÇÃO DO VALOR LEGADO ---
+    const vRaw = instrumentoEdit.valor !== undefined ? instrumentoEdit.valor : (instrumentoEdit.valorContrato || '');
+    let vFinal = vRaw;
+
+    if (typeof vRaw === 'string') {
+      let str = vRaw.trim();
+      if (str.includes(',')) {
+        // Caso clássico: "2.810,00" -> "2810.00"
+        str = str.replace(/\./g, '').replace(',', '.');
+      } else if (/\.\d{3}$/.test(str)) {
+        // O fantasma do CSV: "2.810" sem centavos. Se tem ponto seguido de 3 dígitos, o ponto é milhar!
+        str = str.replace(/\./g, '');
       }
+      vFinal = str;
     }
-  }, [instrumentoEdit]);
+    
+    setValor(vFinal);
+    
+    // Converte a data do formato Firebase/ISO para o formato aceito pelo input HTML (AAAA-MM-DD)
+    const dataRaw = instrumentoEdit.dataVigencia || instrumentoEdit.fimDoContrato;
+    if (dataRaw) {
+      const dateObj = dataRaw.toDate ? dataRaw.toDate() : new Date(dataRaw);
+      setDataVigencia(dateObj.toISOString().split('T')[0]);
+    }
+  }
+}, [instrumentoEdit]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

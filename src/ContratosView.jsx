@@ -338,42 +338,56 @@ export default function ContratosView() {
                         <span className="text-[11px] text-text-secondary font-normal">{inst.identificacao || '-'}</span>
                       </td>
                       <td className="py-3 px-4 text-text-secondary">
-                        {inst.dataVigencia ? formatarDataExibicao(inst.dataVigencia) : inst.fimDoContrato ? new Date(inst.fimDoContrato.seconds * 1000).toLocaleDateString('pt-BR') : '-'}
+                        {inst.dataVigencia 
+                          ? (inst.dataVigencia.toDate 
+                              ? inst.dataVigencia.toDate() 
+                              : new Date(inst.dataVigencia)
+                            ).toLocaleDateString('pt-BR')
+                          : inst.fimDoContrato 
+                            ? (inst.fimDoContrato.toDate 
+                                ? inst.fimDoContrato.toDate() 
+                                : new Date(inst.fimDoContrato)
+                              ).toLocaleDateString('pt-BR')
+                            : '-'}
                       </td>
-                      <td className="py-3 px-4 text-right font-mono text-sop-green font-semibold flex justify-end items-center gap-4">
-                        <span>
-                          {inst.valor ? `R$ ${Number(inst.valor).toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : inst.valorContrato ? `R$ ${Number(inst.valorContrato).toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : '-'}
-                        </span>
-                        <td className="py-3 px-4 text-right font-mono text-sop-green font-semibold flex justify-end items-center gap-2">
-                        <span className="mr-2">
-                          {inst.valor ? `R$ ${Number(inst.valor).toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : inst.valorContrato ? `R$ ${Number(inst.valorContrato).toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : '-'}
-                        </span>
-                        
-                          {/* NOVO BOTÃO DE EDITAR INSTRUMENTO */}
-                              <button 
-                                onClick={() => setShowModalInstrumento(inst)} // Passa o objeto do aditivo direto para o modal
-                                className="text-text-secondary hover:text-sop-blue opacity-0 group-hover:opacity-100 transition-all p-1"
-                                title="Editar Instrumento"
-                              >
-                                <i className="fas fa-pen text-xs"></i>
-                              </button>
+                      <td className="py-3 px-4 text-right font-mono text-sop-green font-semibold flex justify-end items-center gap-2">
+  {/* 1. VALOR FORMATADO: Tratamento limpo usando o formatador nativo */}
+  <span className="mr-2">
+    {inst.valor || inst.valorContrato
+      ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(inst.valor || inst.valorContrato)
+      : '-'}
+  </span>
 
-                              <button 
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  if(window.confirm(`Deseja realmente remover este instrumento do sistema?`)) {
-                                    await removerInstrumento(contratoSelecionado.id, inst.id);
-                                    fetchDetalhes();
-                                  }
-                                }}
-                                className="text-text-muted hover:text-sop-red opacity-0 group-hover:opacity-100 transition-all p-1"
-                                title="Remover Instrumento"
-                              >
-                                <i className="fas fa-trash text-xs"></i>
-                              </button>
-                        </td>
-                      </td> 
-                    </tr>
+  {/* 2. BOTÃO DE EDITAR INSTRUMENTO */}
+  <button 
+    type="button"
+    onClick={() => setShowModalInstrumento(inst)} 
+    className="text-text-secondary hover:text-sop-blue opacity-0 group-hover:opacity-100 transition-all p-1"
+    title="Editar Instrumento"
+  >
+    <i className="fas fa-pen text-xs"></i>
+  </button>
+
+  {/* 3. BOTÃO DE REMOVER INSTRUMENTO */}
+  <button 
+    type="button"
+    onClick={async (e) => {
+      e.stopPropagation(); // Impede de selecionar a linha de trás
+      if (window.confirm(`Deseja realmente remover este instrumento do sistema?`)) {
+        try {
+          await removerInstrumento(contratoSelecionado.id, inst.id);
+          fetchDetalhes();
+        } catch (err) {
+          alert("Erro ao remover: " + err.message);
+        }
+      }
+    }}
+    className="text-text-muted hover:text-sop-red opacity-0 group-hover:opacity-100 transition-all p-1"
+    title="Remover Instrumento"
+  >
+    <i className="fas fa-trash text-xs"></i>
+  </button>
+</td>                    </tr>
                   ))
                 )}
               </tbody>
