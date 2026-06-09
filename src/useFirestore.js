@@ -193,6 +193,23 @@ export const editarInstrumento = async (contratoId, instrumentoId, dadosAtualiza
   }
 };
 
+// --- FUNÇÃO PARA ALTERAR UM FISCAL EXISTENTE ---
+export const editarFiscal = async (contratoId, fiscalId, dadosAtualizados) => {
+  try {
+    const fiscalRef = doc(db, 'contratos', contratoId, 'fiscais', fiscalId);
+    
+    await updateDoc(fiscalRef, {
+      ...dadosAtualizados,
+      atualizadoEm: new Date()
+    });
+    
+    console.log("Fiscal atualizado com sucesso");
+  } catch (error) {
+    console.error("Erro ao editar fiscal no Firestore:", error);
+    throw error;
+  }
+};
+
 export const removerFiscal = async (contratoId, fiscalId) => {
   const fiscalRef = doc(db, 'contratos', contratoId, 'fiscais', fiscalId);
   return await deleteDoc(fiscalRef);

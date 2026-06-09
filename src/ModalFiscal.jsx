@@ -1,134 +1,105 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
-import { db } from './firebase';
-import { adicionarFiscal, useServidores } from './useFirestore';
-import ModalServidor from './ModalServidor';
+import { adicionarFiscal, editarFiscal } from './useFirestore';
 
-export default function ModalFiscal({ contratoId, onClose }) {
-  const { servidores, loading: loadingServidores } = useServidores();
+export default function ModalFiscal({ contratoId, fiscalEdit, onClose, onSuccess }) {
+  const [funcao, setFuncao] = useState('Fiscal Técnico Titular');
+  const [colaborador, setColaborador] = useState('');
   const [servidorEmail, setServidorEmail] = useState('');
-  const [funcao, setFuncao] = useState('');
-  const [dataPortaria, setDataPortaria] = useState('');
-  
-  const [showNovoServidor, setShowNovoServidor] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [erro, setErro] = useState(null);
+  const [salvando, setSalvando] = useState(false);
+
+  // Carrega os dados retroativamente se receber a propriedade de edição
+  useEffect(() => {
+    if (fiscalEdit) {
+      setFuncao(fiscalEdit.funcao || 'Fiscal Técnico Titular');
+      setColaborador(fiscalEdit.colaborador || fiscalEdit.nome || '');
+      setServidorEmail(fiscalEdit.servidorEmail || '');
+    }
+  }, [fiscalEdit]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setErro(null);
-
-    if (!servidorEmail || !funcao) {
-      setErro("Selecione o servidor e a respectiva função legal.");
+    if (!colaborador || !servidorEmail) {
+      alert("Por favor, introduza o nome e o e-mail do servidor.");
       return;
     }
 
-    setLoading(true);
+    setSalvando(true);
     try {
-      // Localiza o objeto completo do servidor para passar o Nome para a subcoleção de forma performática
-      const servidorSelecionado = servidores.find(s => s.email === servidorEmail);
-      
-      let dateObj = null;
-      if (dataPortaria) {
-        const [ano, mes, dia] = dataPortaria.split('-');
-        dateObj = new Date(ano, mes - 1, dia);
-        dateObj.setHours(0,0,0,0);
+      const dadosForm = {
+        funcao,
+        colaborador: colaborador.toUpperCase().trim(),
+        servidorEmail: servidorEmail.toLowerCase().trim()
+      };
+
+      if (fiscalEdit) {
+        // Modo Alteração
+        await editarFiscal(contratoId, fiscalEdit.id, dadosForm);
+      } else {
+        // Modo Novo Cadastro
+        await adicionarFiscal(contratoId, dadosForm);
       }
 
-      await adicionarFiscal(contratoId, {
-        servidorEmail: servidorEmail,
-        colaborador: servidorSelecionado?.nome || '',
-        funcao: funcao,
-        dataPortaria: dateObj
-      });
-
+      onSuccess();
       onClose();
     } catch (err) {
-      setErro(err.message);
+      alert("Erro ao guardar dados da equipa: " + err.message);
     } finally {
-      setLoading(false);
+      setSalvando(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-bg-surface border border-bg-hover rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+      <div className="bg-bg-surface border border-bg-hover w-full max-w-md rounded-xl shadow-2xl flex flex-col overflow-hidden animate-fade-in text-text-primary">
         
-        <div className="p-4 border-b border-bg-hover flex justify-between items-center bg-white/5 border-l-4 border-l-sop-blue">
-          <h3 className="text-sm font-bold text-text-primary flex items-center gap-2">
-            <i className="fas fa-user-shield text-sop-blue"></i> Designar Função na Equipe
+        <div className="px-5 py-4 bg-white/5 border-b border-bg-hover flex justify-between items-center">
+          <h3 className="font-bold text-sm uppercase tracking-wider flex items-center gap-2">
+            <i className="fas fa-user-shield text-sop-green"></i>
+            {fiscalEdit ? 'Alterar Atribuição de Equipa' : 'Designar Membro da Equipa'}
           </h3>
-          <button onClick={onClose} className="text-text-secondary hover:text-sop-red"><i className="fas fa-times"></i></button>
+          <button onClick={onClose} className="text-text-muted hover:text-text-primary text-lg">&times;</button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {erro && <div className="p-3 bg-sop-red/20 border border-sop-red text-sop-red text-xs font-bold rounded">{erro}</div>}
-
-          <div>
-            <div className="flex justify-between items-center mb-1">
-              <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider">Selecionar Servidor Cadastrado</label>
-              <button 
-                type="button"
-                onClick={() => setShowNovoServidor(true)}
-                className="text-[11px] text-sop-green font-bold hover:underline"
-              >
-                <i className="fas fa-plus-circle mr-1"></i> Criar Novo Servidor
-              </button>
-            </div>
-            <select
-              required
-              value={servidorEmail}
-              onChange={e => setServidorEmail(e.target.value)}
-              disabled={loadingServidores}
-              className="w-full p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-blue text-sm transition-all disabled:opacity-50"
-            >
-              <option value="">{loadingServidores ? "Carregando servidores da SOP..." : "Escolha um servidor pelo nome..."}</option>
-              {servidores.map(s => (
-                <option key={s.id} value={s.email}>{s.nome} ({s.email})</option>
-              ))}
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-bold uppercase text-text-secondary">Função Legal (Portaria)</label>
+            <select value={funcao} onChange={e => setFuncao(e.target.value)}
+              className="p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-green text-sm font-medium">
+              <option>Gestor de Contrato</option>
+              <option>Gestor Substituto</option>
+              <option>Fiscal Técnico Titular</option>
+              <option>Fiscal Técnico Suplente</option>
+              <option>Fiscal Administrativo Titular</option>
+              <option>Fiscal Administrativo Suplente</option>
             </select>
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1">Função Atribuída</label>
-            <select
-              required
-              value={funcao}
-              onChange={e => setFuncao(e.target.value)}
-              className="w-full p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-blue text-sm transition-all"
-            >
-              <option value="">Selecione a função da portaria...</option>
-              <option value="Gestor de Contrato">Gestor de Contrato</option>
-              <option value="Fiscal Técnico Titular">Fiscal Técnico Titular</option>
-              <option value="Fiscal Técnico Suplente">Fiscal Técnico Suplente</option>
-              <option value="Fiscal Administrativo Titular">Fiscal Administrativo Titular</option>
-              <option value="Fiscal Administrativo Suplente">Fiscal Administrativo Suplente</option>
-            </select>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-bold uppercase text-text-secondary">Nome Completo do Servidor</label>
+            <input type="text" placeholder="Ex: GERMAN CANO" value={colaborador} onChange={e => setColaborador(e.target.value)}
+              className="p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-green text-sm uppercase" />
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-1">Data da Portaria de Designação</label>
-            <input 
-              type="date"
-              value={dataPortaria}
-              onChange={e => setDataPortaria(e.target.value)}
-              className="w-full p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-blue text-sm transition-all"
-            />
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-bold uppercase text-text-secondary">E-mail Institucional (@sop.rs.gov.br)</label>
+            <input type="email" placeholder="nome.sobrenome@sop.rs.gov.br" value={servidorEmail} onChange={e => setServidorEmail(e.target.value)}
+              className="p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-green text-sm font-mono" />
           </div>
 
-          <div className="pt-4 flex justify-end gap-3 border-t border-bg-hover mt-6">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-xs font-semibold text-text-secondary">Cancelar</button>
-            <button type="submit" disabled={loading} className="px-5 py-2 bg-sop-blue text-white rounded text-xs font-bold hover:bg-sop-blue/90 transition-colors disabled:opacity-50">
-              {loading ? "Processando..." : "Vincular à Equipe"}
+          <div className="pt-2 flex justify-end gap-2 border-t border-bg-hover">
+            <button type="button" onClick={onClose}
+              className="px-4 py-2 border border-bg-hover text-text-secondary text-sm font-semibold rounded hover:bg-bg-hover transition-colors">
+              Cancelar
+            </button>
+            <button type="submit" disabled={salvando}
+              className="px-4 py-2 bg-sop-green text-white text-sm font-bold rounded hover:bg-sop-green/90 transition-colors shadow-sm disabled:opacity-50">
+              {salvando ? <i className="fas fa-spinner fa-spin mr-1"></i> : <i className="fas fa-save mr-1"></i>}
+              {fiscalEdit ? 'Atualizar Portaria' : 'Designar Servidor'}
             </button>
           </div>
         </form>
-      </div>
 
-      {/* Mini sub-modal em cascata para criar servidor rápido caso ele não esteja listado */}
-      {showNovoServidor && (
-        <ModalServidor onClose={() => setShowNovoServidor(false)} />
-      )}
+      </div>
     </div>
   );
 }

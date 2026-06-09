@@ -388,7 +388,7 @@ export default function ContratosView() {
               <i className="fas fa-user-shield text-sop-green mr-2"></i> Equipe
             </div>
             <button 
-              onClick={() => setShowModalFiscal(true)} 
+              onClick={() => setShowModalFiscal('novo')} // <-- Alterado de true para 'novo'
               className="px-3 py-1 bg-sop-green text-white rounded text-xs font-semibold hover:bg-sop-green/90 disabled:opacity-40 transition-colors" 
               disabled={!contratoSelecionado}
             >
@@ -419,24 +419,37 @@ export default function ContratosView() {
                         </span>
                       </td>
                       <td className="py-3 px-4 text-text-primary flex justify-between items-center">
-                        <div className="flex flex-col">
-                          <span className="font-bold uppercase text-xs">{fiscal.colaborador || fiscal.nome || '-'}</span>
-                          {fiscal.servidorEmail && <span className="text-[10px] text-text-secondary font-mono">{fiscal.servidorEmail}</span>}
-                        </div>
-                        <button 
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            if(window.confirm(`Remover ${fiscal.colaborador || 'este fiscal'} do contrato?`)) {
-                              await removerFiscal(contratoSelecionado.id, fiscal.id);
-                              fetchDetalhes();
-                            }
-                          }}
-                          className="text-text-muted hover:text-sop-red opacity-0 group-hover:opacity-100 transition-all"
-                          title="Remover Fiscal"
-                        >
-                          <i className="fas fa-trash"></i>
-                        </button>
-                      </td>
+  <div className="flex flex-col">
+    <span className="font-bold uppercase text-xs">{fiscal.colaborador || fiscal.nome || '-'}</span>
+    {fiscal.servidorEmail && <span className="text-[10px] text-text-secondary font-mono">{fiscal.servidorEmail}</span>}
+  </div>
+  
+  {/* CONTAINER DE AÇÕES DO FISCAL */}
+  <div className="flex items-center gap-2">
+    {/* BOTÃO EDITAR FISCAL */}
+    <button 
+      onClick={() => setShowModalFiscal(fiscal)} // Passa o objeto do fiscal para o modal
+      className="text-text-secondary hover:text-sop-blue opacity-0 group-hover:opacity-100 transition-all p-1"
+      title="Editar Atribuição do Fiscal"
+    >
+      <i className="fas fa-pen text-xs"></i>
+    </button>
+
+    <button 
+      onClick={async (e) => {
+        e.stopPropagation();
+        if(window.confirm(`Remover ${fiscal.colaborador || 'este fiscal'} do contrato?`)) {
+          await removerFiscal(contratoSelecionado.id, fiscal.id);
+          fetchDetalhes();
+        }
+      }}
+      className="text-text-muted hover:text-sop-red opacity-0 group-hover:opacity-100 transition-all p-1"
+      title="Remover Fiscal"
+    >
+      <i className="fas fa-trash text-xs"></i>
+    </button>
+  </div>
+</td>
                     </tr>
                   ))
                 )}
@@ -450,9 +463,10 @@ export default function ContratosView() {
       {/* MODAIS DO SISTEMA */}
       {showModalFiscal && (
         <ModalFiscal 
-          contratoId={contratoSelecionado.id} 
-          onClose={() => setShowModalFiscal(false)}
-          onSuccess={fetchDetalhes} 
+        contratoId={contratoSelecionado.id} 
+        fiscalEdit={showModalFiscal === 'novo' ? null : showModalFiscal} // Passa os dados se for edição
+        onClose={() => setShowModalFiscal(false)}
+        onSuccess={fetchDetalhes}
         />
       )}
 
