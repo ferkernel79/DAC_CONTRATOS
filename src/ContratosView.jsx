@@ -16,7 +16,8 @@ import ModalContrato from './ModalContrato';
 import { exportarParaExcel, exportarParaPDF } from './exportUtils';
 
 export default function ContratosView() {
-  
+
+   
   const { contratos, loading, error } = useContratos();
   
   const [busca, setBusca] = useState('');
@@ -53,6 +54,27 @@ export default function ContratosView() {
     fetchDetalhes();
   }, [contratoSelecionado]);
 
+  // --- CALCULADOR DE STATUS DE EMERGÊNCIA PARA LINHAS SEM STATUS GRAVADO ---
+  const obterStatusReal = (c) => {
+    // Se o motor já gravou o status oficial no banco, usa ele (prioridade máxima)
+    if (c.statusContrato) return c.statusContrato;
+    
+    // Fallback: Se o banco estiver em branco, calcula dinamicamente com base nas datas legadas
+    const dataVigenciaRaw = c.vigenciaOficial || c.fimDoContrato || c.dataVigencia;
+    if (!dataVigenciaRaw) return '[NÃO ATRIBUÍDO]';
+    
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    const dataVenc = dataVigenciaRaw.toDate ? dataVigenciaRaw.toDate() : new Date(dataVigenciaRaw);
+    dataVenc.setHours(0, 0, 0, 0);
+    
+    const diffTime = dataVenc - hoje;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays < 0) return 'NÃO VIGENTE';
+    if (diffDays <= 90) return `ALERTA (${diffDays} DIAS)`;
+    return 'VIGENTE';
+  };
   const contratosFiltrados = contratos.filter(c => {
     // Normaliza o status para caixa baixa para evitar conflito de maiúsculas/minúsculas
     const statusLimpo = (c.statusContrato || c.estagio || '').toLowerCase();
@@ -271,10 +293,10 @@ export default function ContratosView() {
                             : '-'}
                         </td>
 
-                        {/* COLUNA 10: ESTÁGIO / STATUS DINÂMICO */}
-                        <td className="py-3 px-4 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[10px] uppercase tracking-wider ${obterEstiloStatus(c.statusContrato || c.estagio)}`}>
-                            {c.statusContrato || c.estagio || '[NÃO ATRIBUÍDO]'}
+                        {/* COLUNA 10: ESTÁGIO RESTRUTURADA */}
+                        <td className="py-3 px-4 text-center whitespace-nowrap">
+                          <span className={`px-2 py-0.5 rounded text-[10px] uppercase tracking-wider ${obterEstiloStatus(obterStatusReal(c))}`}>
+                            {obterStatusReal(c)}
                           </span>
                         </td>
 
