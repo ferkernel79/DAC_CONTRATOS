@@ -365,7 +365,7 @@ export default function ContratosView() {
                         >
                           <i className="fas fa-trash"></i>
                         </button>
-                      </td>
+                      </td> 
                     </tr>
                   ))
                 )}
