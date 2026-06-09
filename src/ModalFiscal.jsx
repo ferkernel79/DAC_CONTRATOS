@@ -42,7 +42,7 @@ export default function ModalFiscal({ contratoId, fiscalEdit, onClose, onSuccess
       onSuccess();
       onClose();
     } catch (err) {
-      alert("Erro ao guardar dados da equipa: " + err.message);
+      alert("Erro ao guardar dados da equipe: " + err.message);
     } finally {
       setSalvando(false);
     }
@@ -55,7 +55,7 @@ export default function ModalFiscal({ contratoId, fiscalEdit, onClose, onSuccess
         <div className="px-5 py-4 bg-white/5 border-b border-bg-hover flex justify-between items-center">
           <h3 className="font-bold text-sm uppercase tracking-wider flex items-center gap-2">
             <i className="fas fa-user-shield text-sop-green"></i>
-            {fiscalEdit ? 'Alterar Atribuição de Equipa' : 'Designar Membro da Equipa'}
+            {fiscalEdit ? 'Alterar Atribuição de Equipe' : 'Designar Membro da Equipe'}
           </h3>
           <button onClick={onClose} className="text-text-muted hover:text-text-primary text-lg">&times;</button>
         </div>
