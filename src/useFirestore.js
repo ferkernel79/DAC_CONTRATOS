@@ -12,7 +12,7 @@ import {
   onSnapshot,
   runTransaction
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 
 // --- ESCUDO ANTI-UNDEFINED (REGRA DE OURO) ---
 const limparDados = (obj) => {
@@ -321,11 +321,37 @@ export const removerFornecedor = async (fornecedorId, perfilLogado) => {
 };
 
 // Atualize a sua função de remover instrumento adicionando a trava:
-export const removerInstrumento = async (contratoId, instrumentoId, perfilLogado) => {
-  verificarPermissaoExclusao(perfilLogado);
-  const instRef = doc(db, 'contratos', contratoId, 'instrumentos', instrumentoId);
-  await deleteDoc(instRef);
-  await atualizarStatusContrato(contratoId);
+export const removerInstrumento = async (contratoId, instrumentoId) => {
+  try {
+    // 1. Captura o e-mail do usuário que está logado no momento
+    const emailAtual = auth.currentUser?.email;
+    if (!emailAtual) {
+      throw new Error("Sessão expirada. Faça login novamente.");
+    }
+
+    // 2. Busca o perfil correspondente na coleção 'usuarios' (forçando caixa baixa)
+    const userRef = doc(db, 'usuarios', emailAtual.toLowerCase().trim());
+    const userSnap = await getDoc(userRef);
+    
+    // Captura o perfil e normaliza para maiúsculo
+    const perfil = userSnap.data()?.perfil?.toUpperCase()?.trim();
+
+    // 3. Validação do disjuntor de segurança do Frontend
+    if (perfil !== 'ADMINISTRADOR') {
+      throw new Error("ACESSO NEGADO: Operadores não possuem permissão para excluir registros.");
+    }
+
+    // 4. Se passou pela trava, executa a exclusão na subcoleção
+    const instRef = doc(db, 'contratos', contratoId, 'instrumentos', instrumentoId);
+    await deleteDoc(instRef);
+    
+    // 5. Recalcula os prazos e valores totais do contrato pai
+    await sincronizarPrazosEValores(contratoId);
+
+  } catch (error) {
+    console.error("Falha na validação de exclusão:", error);
+    throw error;
+  }
 };
 
 // --- MOTOR DE REGRAS DE NEGÓCIO DA DAC/SOP ---

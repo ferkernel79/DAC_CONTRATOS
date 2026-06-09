@@ -346,10 +346,18 @@ export default function ContratosView() {
                         </span>
                         <button 
                           onClick={async (e) => {
-                            e.stopPropagation();
-                            if(window.confirm(`Remover este instrumento do sistema?`)) {
-                              await removerInstrumento(contratoSelecionado.id, inst.id);
-                              fetchDetalhes();
+                            e.stopPropagation(); // Impede de desmarcar a linha do contrato
+                            if (window.confirm(`Deseja realmente remover este instrumento do sistema?`)) {
+                              try {
+                                // Retornando para a função correta de subcoleções
+                                await removerInstrumento(contratoSelecionado.id, inst.id);
+                                alert("Instrumento removido com sucesso!");
+                                
+                                // Atualiza os painéis na tela imediatamente
+                                fetchDetalhes(); 
+                              } catch (err) {
+                                alert("Erro ao remover instrumento: " + err.message);
+                              }
                             }
                           }}
                           className="text-text-muted hover:text-sop-red opacity-0 group-hover:opacity-100 transition-all"
