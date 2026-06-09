@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './useAuth';
 import LoginView from './LoginView';
 import ContratosView from './ContratosView';
@@ -10,6 +10,22 @@ function PainelPrincipalSOP() {
   const [menuRetraido, setMenuRetraido] = useState(false);
   const { usuarioLogado, perfil, logout } = useAuth();
   const [abaAtiva, setAbaAtiva] = useState('dashboard'); // 'ABA INICIAL
+  // --- CONTROLE DE TEMA (CLARO / ESCURO) ---
+const [temaEscuro, setTemaEscuro] = useState(() => {
+  // Se o usuário já usou o app antes, puxa a preferência dele. Se não, começa no Claro
+  return localStorage.getItem('dac-tema') === 'dark';
+});
+
+// Efeito que injeta a classe .dark direto na raiz do navegador
+useEffect(() => {
+  if (temaEscuro) {
+    document.documentElement.classList.add('dark');
+    localStorage.setItem('dac-tema', 'dark');
+  } else {
+    document.documentElement.classList.remove('dark');
+    localStorage.setItem('dac-tema', 'light');
+  }
+}, [temaEscuro]);
 
   return (
     <div className="flex h-screen w-screen bg-bg-body overflow-hidden">
@@ -69,7 +85,28 @@ function PainelPrincipalSOP() {
           {/* ... Repita a mesma lógica do {!menuRetraido && <span>} para os outros botões ... */}
   
         </nav>
-  
+         {/* ALTERNADOR DE TEMA CLARO/ESCURO */}
+        <div className={`p-3 border-t border-bg-hover flex ${menuRetraido ? 'justify-center' : 'justify-between items-center'}`}>
+          {!menuRetraido && (
+            <span className="text-xs font-bold text-text-secondary uppercase tracking-wider">
+              {temaEscuro ? 'Ambiente Escuro' : 'Ambiente Claro'}
+            </span>
+          )}
+          
+          <button
+            type="button"
+            onClick={() => setTemaEscuro(!temaEscuro)}
+            className={`p-2.5 rounded-lg text-base transition-all ${
+              temaEscuro 
+                ? 'bg-amber-500/10 text-amber-500 hover:bg-amber-500/20' 
+                : 'bg-sop-blue/10 text-sop-blue hover:bg-sop-blue/20'
+            }`}
+            title={temaEscuro ? "Mudar para Modo Claro" : "Mudar para Modo Escuro"}
+          >
+            {/* Ícone muda dinamicamente: Sol para o claro, Lua para o escuro */}
+            <i className={`fas ${temaEscuro ? 'fa-sun' : 'fa-moon'}`}></i>
+          </button>
+        </div>
         {/* RODAPÉ DO MENU (Fica limpo com foto ou apenas o ícone de logout quando encolhido) */}
         <div className="p-3 border-t border-bg-hover flex justify-center">
           <button className="text-text-muted hover:text-sop-red p-2" title="Sair do Sistema">

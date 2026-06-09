@@ -2,11 +2,59 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Garantir que o corpo da página ocupe 100% da tela sem margens extras */
-html, body, #root {
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
+/* ========================================================
+   PALETA DE CORES DINÂMICA DA DAC/SOP (BYPASS COMPLETO)
+   ======================================================== */
+
+/* MODO CLARO (Padrão quando a página inicia) */
+:root {
+  --bg-body: #F1F5F9;       /* Cinza claro confortável */
+  --bg-surface: #FFFFFF;    /* Branco puro para cards e tabelas */
+  --bg-hover: #E2E8F0;      /* Destaque ao passar o mouse */
+  
+  --text-primary: #0F172A;  /* Texto quase preto, leitura nítida */
+  --text-secondary: #475569;/* Texto auxiliar grafite */
+  --text-muted: #94A3B8;     /* Ícones desativados */
+
+  /* Cores Identitárias da SOP */
+  --sop-blue: #1E3A8A;
+  --sop-green: #059669;
+  --sop-yellow: #D97706;
+  --sop-red: #DC2626;
+  --sop-purple: #7C3AED;
 }
+
+/* MODO ESCURO (Ativado quando o React injeta a classe .dark no html) */
+.dark {
+  --bg-body: #0F172A;       /* Azul escuro profundo */
+  --bg-surface: #1E293B;    /* Cinza-azulado para cards/tabelas */
+  --bg-hover: #334155;      /* Destaque escuro */
+  
+  --text-primary: #F8FAFC;  /* Texto branco gelo */
+  --text-secondary: #94A3B8;/* Texto auxiliar cinza claro */
+  --text-muted: #64748B;     /* Cinza apagado */
+}
+
+/* ========================================================
+   DISJUNTOR DE SOBERANIA INTERNA (FORÇA O MAPEAMENTO)
+   ======================================================== */
+.bg-bg-body { background-color: var(--bg-body) !important; }
+.bg-bg-surface { background-color: var(--bg-surface) !important; }
+.bg-bg-hover { background-color: var(--bg-hover) !important; }
+.hover\:bg-bg-hover:hover { background-color: var(--bg-hover) !important; }
+
+.text-text-primary { color: var(--text-primary) !important; }
+.text-text-secondary { color: var(--text-secondary) !important; }
+.text-text-muted { color: var(--text-muted) !important; }
+
+/* Amarração das Cores da SOP */
+.text-sop-blue { color: var(--sop-blue) !important; }
+.bg-sop-blue { background-color: var(--sop-blue) !important; }
+.text-sop-green { color: var(--sop-green) !important; }
+.bg-sop-green { background-color: var(--sop-green) !important; }
+.text-sop-yellow { color: var(--sop-yellow) !important; }
+.bg-sop-yellow { background-color: var(--sop-yellow) !important; }
+.text-sop-red { color: var(--sop-red) !important; }
+.bg-sop-red { background-color: var(--sop-red) !important; }
+.text-sop-purple { color: var(--sop-purple) !important; }
+.bg-sop-purple { background-color: var(--sop-purple) !important; }
