@@ -307,7 +307,7 @@ export default function ContratosView() {
               </span>
             </div>
             <button 
-              onClick={() => setShowModalInstrumento(true)}
+              onClick={() => setShowModalInstrumento('novo')}
               className="px-3 py-1 bg-sop-yellow text-bg-body rounded text-xs font-bold hover:bg-sop-yellow/90 disabled:opacity-40 transition-colors" 
               disabled={!contratoSelecionado}
             >
@@ -344,27 +344,34 @@ export default function ContratosView() {
                         <span>
                           {inst.valor ? `R$ ${Number(inst.valor).toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : inst.valorContrato ? `R$ ${Number(inst.valorContrato).toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : '-'}
                         </span>
-                        <button 
-                          onClick={async (e) => {
-                            e.stopPropagation(); // Impede de desmarcar a linha do contrato
-                            if (window.confirm(`Deseja realmente remover este instrumento do sistema?`)) {
-                              try {
-                                // Retornando para a função correta de subcoleções
-                                await removerInstrumento(contratoSelecionado.id, inst.id);
-                                alert("Instrumento removido com sucesso!");
-                                
-                                // Atualiza os painéis na tela imediatamente
-                                fetchDetalhes(); 
-                              } catch (err) {
-                                alert("Erro ao remover instrumento: " + err.message);
-                              }
-                            }
-                          }}
-                          className="text-text-muted hover:text-sop-red opacity-0 group-hover:opacity-100 transition-all"
-                          title="Remover Instrumento"
-                        >
-                          <i className="fas fa-trash"></i>
-                        </button>
+                        <td className="py-3 px-4 text-right font-mono text-sop-green font-semibold flex justify-end items-center gap-2">
+                        <span className="mr-2">
+                          {inst.valor ? `R$ ${Number(inst.valor).toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : inst.valorContrato ? `R$ ${Number(inst.valorContrato).toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : '-'}
+                        </span>
+                        
+                          {/* NOVO BOTÃO DE EDITAR INSTRUMENTO */}
+                              <button 
+                                onClick={() => setShowModalInstrumento(inst)} // Passa o objeto do aditivo direto para o modal
+                                className="text-text-secondary hover:text-sop-blue opacity-0 group-hover:opacity-100 transition-all p-1"
+                                title="Editar Instrumento"
+                              >
+                                <i className="fas fa-pen text-xs"></i>
+                              </button>
+
+                              <button 
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if(window.confirm(`Deseja realmente remover este instrumento do sistema?`)) {
+                                    await removerInstrumento(contratoSelecionado.id, inst.id);
+                                    fetchDetalhes();
+                                  }
+                                }}
+                                className="text-text-muted hover:text-sop-red opacity-0 group-hover:opacity-100 transition-all p-1"
+                                title="Remover Instrumento"
+                              >
+                                <i className="fas fa-trash text-xs"></i>
+                              </button>
+                        </td>
                       </td> 
                     </tr>
                   ))

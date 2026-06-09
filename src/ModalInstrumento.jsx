@@ -1,119 +1,119 @@
-import React, { useState } from 'react';
-import { adicionarInstrumento } from './useFirestore';
-import { Timestamp } from 'firebase/firestore';
+import React, { useState, useEffect } from 'react';
+import { adicionarInstrumento, editarInstrumento } from './useFirestore';
 
-export default function ModalInstrumento({ contratoId, onClose, onSuccess }) {
-  const [tipo, setTipo] = useState('Contrato');
-  const [itemAditivado, setItemAditivado] = useState('Prazo');
+export default function ModalInstrumento({ contratoId, instrumentoEdit, onClose, onSuccess }) {
+  const [tipo, setTipo] = useState('Termo Aditivo');
   const [identificacao, setIdentificacao] = useState('');
   const [valor, setValor] = useState('');
-  const [dataFim, setDataFim] = useState('');
-  const [observacoes, setObservacoes] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [dataVigencia, setDataVigencia] = useState('');
+  const [salvando, setSalvando] = useState(false);
 
-  const isTermoAditivo = tipo === 'Termo Aditivo';
-  const exigePrazo = tipo === 'Contrato' || (isTermoAditivo && (itemAditivado === 'Prazo' || itemAditivado === 'Prazo e Valor'));
-  const exigeValor = tipo === 'Contrato' || tipo === 'Apostilamento' || (isTermoAditivo && (itemAditivado === 'Valor' || itemAditivado === 'Prazo e Valor'));
+  // Carrega os dados caso seja uma operação de ALTERAÇÃO
+  useEffect(() => {
+    if (instrumentoEdit) {
+      setTipo(instrumentoEdit.tipo || 'Termo Aditivo');
+      setIdentificacao(instrumentoEdit.identificacao || '');
+      setValor(instrumentoEdit.valor || instrumentoEdit.valorContrato || '');
+      
+      // Converte a data do formato Firebase/ISO para o formato aceito pelo input HTML (AAAA-MM-DD)
+      const dataRaw = instrumentoEdit.dataVigencia || instrumentoEdit.fimDoContrato;
+      if (dataRaw) {
+        const dateObj = dataRaw.toDate ? dataRaw.toDate() : new Date(dataRaw);
+        setDataVigencia(dateObj.toISOString().split('T')[0]);
+      }
+    }
+  }, [instrumentoEdit]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
+    if (!identificacao || !dataVigencia) {
+      alert("Por favor, preencha a identificação e a data de vigência.");
+      return;
+    }
+
+    setSalvando(true);
     try {
-      const dataTimestamp = dataFim ? Timestamp.fromDate(new Date(`${dataFim}T12:00:00`)) : null;
-      
-      const dados = {
+      const dadosForm = {
         tipo,
         identificacao,
-        observacoes,
-        valorContrato: valor ? parseFloat(valor.replace(',', '.')) : null,
-        fimDoContrato: dataTimestamp,
-        itemAditivado: isTermoAditivo ? itemAditivado : null
+        valor: valor ? parseFloat(valor) : 0,
+        dataVigencia: new Date(dataVigencia + 'T12:00:00') // Evita fuso horário quebrando o dia
       };
 
-      await adicionarInstrumento(contratoId, dados);
-      onSuccess(); 
-      onClose(); 
-    } catch (error) {
-      console.error("Erro ao adicionar instrumento:", error);
-      alert("Falha ao salvar o instrumento.");
+      if (instrumentoEdit) {
+        // Modo Edição
+        await editarInstrumento(contratoId, instrumentoEdit.id, dadosForm);
+      } else {
+        // Modo Novo Registro
+        await adicionarInstrumento(contratoId, dadosForm);
+      }
+
+      onSuccess();
+      onClose();
+    } catch (err) {
+      alert("Erro ao salvar instrumento: " + err.message);
     } finally {
-      setLoading(false);
+      setSalvando(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-bg-surface border border-bg-hover rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-fade-in-up">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+      <div className="bg-bg-surface border border-bg-hover w-full max-w-md rounded-xl shadow-2xl flex flex-col overflow-hidden animate-fade-in text-text-primary">
         
-        <div className="p-4 border-b border-bg-hover flex justify-between items-center bg-white/5 border-l-4 border-l-sop-yellow">
-          <h3 className="text-lg font-bold text-text-primary flex items-center gap-2">
-            <i className="fas fa-file-invoice-dollar text-sop-yellow"></i> Registar Instrumento
+        <div className="px-5 py-4 bg-white/5 border-b border-bg-hover flex justify-between items-center">
+          <h3 className="font-bold text-sm uppercase tracking-wider flex items-center gap-2">
+            <i className="fas fa-file-signature text-sop-yellow"></i>
+            {instrumentoEdit ? 'Alterar Instrumento' : 'Adicionar Instrumento'}
           </h3>
-          <button onClick={onClose} className="text-text-secondary hover:text-sop-red transition-colors">
-            <i className="fas fa-times text-lg"></i>
-          </button>
+          <button onClick={onClose} className="text-text-muted hover:text-text-primary text-lg">&times;</button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">Tipo de Instrumento</label>
-              <select value={tipo} onChange={e => { setTipo(e.target.value); setDataFim(''); setValor(''); }} className="w-full p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-yellow transition-all">
-                <option value="Contrato">Contrato (Inicial)</option>
-                <option value="Termo Aditivo">Termo Aditivo</option>
-                <option value="Apostilamento">Apostilamento</option>
-                <option value="Rescisão">Rescisão</option>
-              </select>
-            </div>
-            
-            {isTermoAditivo ? (
-              <div className="animate-fade-in-up">
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2 text-sop-yellow">Item Aditivado</label>
-                <select value={itemAditivado} onChange={e => setItemAditivado(e.target.value)} className="w-full p-2.5 bg-bg-body border border-sop-yellow/30 text-text-primary rounded-md outline-none focus:border-sop-yellow transition-all">
-                  <option value="Prazo">Prazo</option>
-                  <option value="Valor">Valor</option>
-                  <option value="Prazo e Valor">Prazo e Valor</option>
-                </select>
-              </div>
-            ) : (
-              <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">Nº / Identificação</label>
-                <input type="text" required placeholder="Ex: 01/2026" value={identificacao} onChange={e => setIdentificacao(e.target.value)} className="w-full p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-yellow transition-all" />
-              </div>
-            )}
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-bold uppercase text-text-secondary">Tipo de Instrumento</label>
+            <select value={tipo} onChange={e => setTipo(e.target.value)}
+              className="p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-yellow text-sm font-medium">
+              <option>Termo Aditivo</option>
+              <option>Apostilamento</option>
+              <option>Contrato Original</option>
+              <option>Termo de Rescisão</option>
+            </select>
           </div>
 
-          {isTermoAditivo && (
-            <div>
-              <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">Nº / Identificação do Aditivo</label>
-              <input type="text" required placeholder="Ex: 1º TA" value={identificacao} onChange={e => setIdentificacao(e.target.value)} className="w-full p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-yellow transition-all" />
-            </div>
-          )}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-bold uppercase text-text-secondary">Identificação (Número/Ano)</label>
+            <input type="text" placeholder="Ex: TA 02/2026 - Prorrogação" value={identificacao} onChange={e => setIdentificacao(e.target.value)}
+              className="p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-yellow text-sm" />
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div className={!exigePrazo ? 'opacity-40 pointer-events-none' : ''}>
-              <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">Fim do Contrato</label>
-              <input type="date" required={exigePrazo} value={dataFim} onChange={e => setDataFim(e.target.value)} className="w-full p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-yellow transition-all [color-scheme:dark]" />
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold uppercase text-text-secondary">Valor (R$)</label>
+              <input type="number" step="0.01" placeholder="0.00" value={valor} onChange={e => setValor(e.target.value)}
+                className="p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-yellow text-sm font-mono" />
             </div>
-            <div className={!exigeValor ? 'opacity-40 pointer-events-none' : ''}>
-              <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">Valor do Contrato (R$)</label>
-              <input type="number" step="0.01" required={exigeValor} placeholder="0.00" value={valor} onChange={e => setValor(e.target.value)} className="w-full p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-yellow transition-all" />
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold uppercase text-text-secondary">Vigência Final</label>
+              <input type="date" value={dataVigencia} onChange={e => setDataVigencia(e.target.value)}
+                className="p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-yellow text-sm font-mono" />
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">Observações</label>
-            <textarea maxLength="255" rows="2" value={observacoes} onChange={e => setObservacoes(e.target.value)} placeholder="Registe informações adicionais..." className="w-full p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-yellow transition-all resize-none"></textarea>
-            <div className="text-right text-[10px] text-text-muted mt-1">{observacoes.length}/255</div>
-          </div>
-
-          <div className="pt-4 flex justify-end gap-3 border-t border-bg-hover mt-6">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-semibold text-text-secondary hover:text-text-primary transition-colors">Cancelar</button>
-            <button type="submit" disabled={loading} className="px-6 py-2 bg-sop-yellow text-bg-body rounded text-sm font-bold hover:bg-sop-yellow/90 transition-colors disabled:opacity-50">
-              {loading ? <i className="fas fa-circle-notch fa-spin"></i> : 'Registar'}
+          <div className="pt-2 flex justify-end gap-2 border-t border-bg-hover">
+            <button type="button" onClick={onClose}
+              className="px-4 py-2 border border-bg-hover text-text-secondary text-sm font-semibold rounded hover:bg-bg-hover transition-colors">
+              Cancelar
+            </button>
+            <button type="submit" disabled={salvando}
+              className="px-4 py-2 bg-sop-yellow text-bg-body text-sm font-bold rounded hover:bg-sop-yellow/90 transition-colors shadow-sm disabled:opacity-50">
+              {salvando ? <i className="fas fa-spinner fa-spin mr-1"></i> : <i className="fas fa-save mr-1"></i>}
+              {instrumentoEdit ? 'Salvar Alterações' : 'Cadastrar'}
             </button>
           </div>
         </form>
+
       </div>
     </div>
   );

@@ -62,30 +62,54 @@ useEffect(() => {
           <button 
             onClick={() => setAbaAtiva('dashboard')}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-              abaAtiva === 'dashboard' ? 'bg-sop-blue text-white' : 'text-text-secondary hover:bg-bg-hover'
+              abaAtiva === 'dashboard' ? 'bg-sop-blue text-white' : 'text-text-secondary hover:bg-bg-hover text-text-primary'
             } ${menuRetraido ? 'justify-center' : ''}`}
             title="Painel Gerencial"
           >
             <i className="fas fa-chart-pie w-5 text-center text-base"></i>
             {!menuRetraido && <span className="truncate">Painel Gerencial</span>}
           </button>
-  
+
           {/* BOTÃO 2: CONTRATOS */}
           <button 
             onClick={() => setAbaAtiva('contratos')}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-              abaAtiva === 'contratos' ? 'bg-sop-blue text-white' : 'text-text-secondary hover:bg-bg-hover'
+              abaAtiva === 'contratos' ? 'bg-sop-blue text-white' : 'text-text-secondary hover:bg-bg-hover text-text-primary'
             } ${menuRetraido ? 'justify-center' : ''}`}
             title="Gestão de Contratos"
           >
             <i className="fas fa-file-contract w-5 text-center text-base"></i>
             {!menuRetraido && <span className="truncate">Contratos</span>}
           </button>
-  
-          {/* ... Repita a mesma lógica do {!menuRetraido && <span>} para os outros botões ... */}
-  
+
+          {/* BOTÃO 3: FORNECORES (Recuperado e Blindado) */}
+          <button 
+            onClick={() => setAbaAtiva('fornecedores')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              abaAtiva === 'fornecedores' ? 'bg-sop-blue text-white' : 'text-text-secondary hover:bg-bg-hover text-text-primary'
+            } ${menuRetraido ? 'justify-center' : ''}`}
+            title="Cadastro de Fornecedores"
+          >
+            <i className="fas fa-store w-5 text-center text-base"></i>
+            {!menuRetraido && <span className="truncate">Fornecedores</span>}
+          </button>
+
+          {/* BOTÃO 4: USUÁRIOS (Apenas se o perfil logado for ADMIN) */}
+          {perfil === 'ADMINISTRADOR' && (
+            <button 
+              onClick={() => setAbaAtiva('usuarios')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                abaAtiva === 'usuarios' ? 'bg-sop-blue text-white' : 'text-text-secondary hover:bg-bg-hover text-text-primary'
+              } ${menuRetraido ? 'justify-center' : ''}`}
+              title="Controle de Usuários"
+            >
+              <i className="fas fa-users-cog w-5 text-center text-base"></i>
+              {!menuRetraido && <span className="truncate">Usuários</span>}
+            </button>
+          )}
+
         </nav>
-         {/* ALTERNADOR DE TEMA CLARO/ESCURO */}
+        {/* ALTERNADOR DE TEMA CLARO/ESCURO */}
         <div className={`p-3 border-t border-bg-hover flex ${menuRetraido ? 'justify-center' : 'justify-between items-center'}`}>
           {!menuRetraido && (
             <span className="text-xs font-bold text-text-secondary uppercase tracking-wider">
@@ -120,6 +144,8 @@ useEffect(() => {
       <main className="flex-1 h-full overflow-hidden flex flex-col bg-bg-body">
         {abaAtiva === 'dashboard' && <DashboardView />}
         {abaAtiva === 'contratos' && <ContratosView />}
+        {abaAtiva === 'fornecedores' && <FornecedoresView />}
+        {abaAtiva === 'usuarios' && perfil === 'ADMINISTRADOR' && <UsuariosView />}
         {/* ... restante das abas ... */}
       </main>
   

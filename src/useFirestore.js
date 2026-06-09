@@ -173,6 +173,25 @@ export const adicionarInstrumento = async (contratoId, dadosInstrumento) => {
   await atualizarStatusContrato(contratoId);
   return docRef;
 };
+// --- FUNÇÃO PARA ALTERAR UM INSTRUMENTO EXISTENTE ---
+export const editarInstrumento = async (contratoId, instrumentoId, dadosAtualizados) => {
+  try {
+    const instRef = doc(db, 'contratos', contratoId, 'instrumentos', instrumentoId);
+    
+    // Atualiza os dados do instrumento na subcoleção
+    await updateDoc(instRef, {
+      ...dadosAtualizados,
+      atualizadoEm: new Date()
+    });
+
+    // DISPARO CRÍTICO: Recalcula a vigência oficial e o valor do contrato pai
+    await sincronizarPrazosEValores(contratoId);
+
+  } catch (error) {
+    console.error("Erro ao editar instrumento no Firestore:", error);
+    throw error;
+  }
+};
 
 export const removerFiscal = async (contratoId, fiscalId) => {
   const fiscalRef = doc(db, 'contratos', contratoId, 'fiscais', fiscalId);
