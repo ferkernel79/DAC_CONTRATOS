@@ -171,13 +171,18 @@ export default function ModalContrato({ onClose, contratoEdit }) {
                 {/* Opções espelhadas com a taxonomia do CSV real para auto-seleção retroativa */}
                 <option value="Serviços especializados">Serviços especializados</option>
                 <option value="Locação de imóveis">Locação de imóveis</option>
+                <option value="Conservação e manutenção">Conservação e manutenção</option>
+                <option value="Correspondência">Correspondência</option>
+                <option value="Locação de veículos">Locação de veículos</option>
                 <option value="Locação de bens">Locação de bens</option>
                 <option value="Telefonia">Telefonia</option>
+                <option value="Jornais, Revistas e Periódicos">Jornais Revistas e Periódicos</option>
                 <option value="Obras e serviços de engenharia">Obras e serviços de engenharia</option>
-                <option value="Manutenção Predial">Manutenção Predial</option>
+                <option value="Manutenção Predial">NÃO USAR</option>
                 <option value="Serviços de Alarme e Monitoramento">Serviços de Alarme e Monitoramento</option>
                 <option value="Software">Software</option>
                 <option value="Serviços de TI">Serviços de TI</option>
+
               </select>
             </div>
             <div>

@@ -6,46 +6,55 @@ export default function ModalInstrumento({ contratoId, instrumentoEdit, onClose,
   const [identificacao, setIdentificacao] = useState('');
   const [valor, setValor] = useState('');
   const [dataVigencia, setDataVigencia] = useState('');
+  const [observacao, setObservacao] = useState('');
   const [salvando, setSalvando] = useState(false);
 
-  
-// Carrega os dados caso seja uma operação de ALTERAÇÃO (COM TRATAMENTO DE MILHAR BR)
+  // Estado para seleção múltipla de alterações
+  const [alteracoes, setAlteracoes] = useState({
+    prazo: false,
+    valor: false,
+    supressao: false
+  });
+
+  // Handler para alternar os checkboxes
+  const handleCheckboxChange = (campo) => {
+    setAlteracoes(prev => ({ ...prev, [campo]: !prev[campo] }));
+  };
+
+  // Carrega dados se for Edição (Com validação estrita de objeto)
+// Escuta as mudanças no instrumentoEdit com precisão
 useEffect(() => {
   if (instrumentoEdit) {
-    setTipo(instrumentoEdit.tipo || 'Termo Aditivo');
-    setIdentificacao(instrumentoEdit.identificacao || '');
+    // MODO EDIÇÃO: Preenche com os dados do banco
+    setTipo(instrumentoEdit.tipo || instrumentoEdit.tipoInstrumento || 'Termo Aditivo');
+    setIdentificacao(instrumentoEdit.identificacao || instrumentoEdit.numero || instrumentoEdit.id || '');
+    setObservacao(instrumentoEdit.observacao || instrumentoEdit.obs || '');
+    setAlteracoes(instrumentoEdit.alteracoes || { prazo: false, valor: false, supressao: false });
     
-    // --- CAPTURA E SANITIZAÇÃO DO VALOR LEGADO ---
     const vRaw = instrumentoEdit.valor !== undefined ? instrumentoEdit.valor : (instrumentoEdit.valorContrato || '');
-    let vFinal = vRaw;
-
-    if (typeof vRaw === 'string') {
-      let str = vRaw.trim();
-      if (str.includes(',')) {
-        // Caso clássico: "2.810,00" -> "2810.00"
-        str = str.replace(/\./g, '').replace(',', '.');
-      } else if (/\.\d{3}$/.test(str)) {
-        // O fantasma do CSV: "2.810" sem centavos. Se tem ponto seguido de 3 dígitos, o ponto é milhar!
-        str = str.replace(/\./g, '');
-      }
-      vFinal = str;
-    }
+    setValor(vRaw);
     
-    setValor(vFinal);
-    
-    // Converte a data do formato Firebase/ISO para o formato aceito pelo input HTML (AAAA-MM-DD)
     const dataRaw = instrumentoEdit.dataVigencia || instrumentoEdit.fimDoContrato;
     if (dataRaw) {
       const dateObj = dataRaw.toDate ? dataRaw.toDate() : new Date(dataRaw);
       setDataVigencia(dateObj.toISOString().split('T')[0]);
+    } else {
+      setDataVigencia('');
     }
+  } else {
+    // MODO NOVO CADASTRO: Força a limpeza total dos campos
+    setTipo('Termo Aditivo');
+    setIdentificacao('');
+    setValor('');
+    setDataVigencia('');
+    setObservacao('');
+    setAlteracoes({ prazo: false, valor: false, supressao: false });
   }
 }, [instrumentoEdit]);
-
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!identificacao || !dataVigencia) {
-      alert("Por favor, preencha a identificação e a data de vigência.");
+    if (!identificacao.trim()) {
+      alert("Por favor, informe a identificação do instrumento.");
       return;
     }
 
@@ -53,16 +62,17 @@ useEffect(() => {
     try {
       const dadosForm = {
         tipo,
-        identificacao,
+        identificacao: identificacao.toUpperCase().trim(),
         valor: valor ? parseFloat(valor) : 0,
-        dataVigencia: new Date(dataVigencia + 'T12:00:00') // Evita fuso horário quebrando o dia
+        alteracoes,
+        observacao: observacao.trim(),
+        // A data só é salva se for preenchida pelo usuário
+        dataVigencia: dataVigencia ? new Date(dataVigencia + 'T12:00:00') : null 
       };
 
       if (instrumentoEdit) {
-        // Modo Edição
         await editarInstrumento(contratoId, instrumentoEdit.id, dadosForm);
       } else {
-        // Modo Novo Registro
         await adicionarInstrumento(contratoId, dadosForm);
       }
 
@@ -82,43 +92,73 @@ useEffect(() => {
         <div className="px-5 py-4 bg-white/5 border-b border-bg-hover flex justify-between items-center">
           <h3 className="font-bold text-sm uppercase tracking-wider flex items-center gap-2">
             <i className="fas fa-file-signature text-sop-yellow"></i>
-            {instrumentoEdit ? 'Alterar Instrumento' : 'Adicionar Instrumento'}
+            {instrumentoEdit ? 'Alterar Instrumento' : 'Cadastrar Instrumento'}
           </h3>
           <button onClick={onClose} className="text-text-muted hover:text-text-primary text-lg">&times;</button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto max-h-[80vh]">
+          {/* TIPO DE INSTRUMENTO */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-bold uppercase text-text-secondary">Tipo de Instrumento</label>
             <select value={tipo} onChange={e => setTipo(e.target.value)}
               className="p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-yellow text-sm font-medium">
+              <option>Contrato</option>
               <option>Termo Aditivo</option>
               <option>Apostilamento</option>
-              <option>Contrato Original</option>
               <option>Termo de Rescisão</option>
             </select>
           </div>
 
+          {/* IDENTIFICAÇÃO */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold uppercase text-text-secondary">Identificação (Número/Ano)</label>
-            <input type="text" placeholder="Ex: TA 02/2026 - Prorrogação" value={identificacao} onChange={e => setIdentificacao(e.target.value)}
+            <label className="text-xs font-bold uppercase text-text-secondary">Identificação (Texto Livre)</label>
+            <input type="text" placeholder="Ex: TA 01/2026 - Prorrogação de Prazo" value={identificacao} onChange={e => setIdentificacao(e.target.value)}
               className="p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-yellow text-sm" />
           </div>
 
+          {/* SELEÇÃO DE ALTERAÇÕES (MÚLTIPLA SELEÇÃO) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-bold uppercase text-text-secondary">Objeto das Alterações</label>
+            <div className="grid grid-cols-3 gap-2 bg-bg-body p-3 rounded-md border border-bg-hover">
+              <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer select-none text-text-primary">
+                <input type="checkbox" checked={alteracoes.prazo} onChange={() => handleCheckboxChange('prazo')} className="rounded border-bg-hover text-sop-yellow focus:ring-0" />
+                Prazo
+              </label>
+              <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer select-none text-text-primary">
+                <input type="checkbox" checked={alteracoes.valor} onChange={() => handleCheckboxChange('valor')} className="rounded border-bg-hover text-sop-yellow focus:ring-0" />
+                Valor (+)
+              </label>
+              <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer select-none text-text-primary">
+                <input type="checkbox" checked={alteracoes.supressao} onChange={() => handleCheckboxChange('supressao')} className="rounded border-bg-hover text-sop-yellow focus:ring-0" />
+                Supressão (-)
+              </label>
+            </div>
+          </div>
+
+          {/* VALOR E DATA VIGÊNCIA (OPCIONAIS) */}
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold uppercase text-text-secondary">Valor (R$)</label>
+              <label className="text-xs font-bold uppercase text-text-secondary">Valor Impactado (R$)</label>
               <input type="number" step="0.01" placeholder="0.00" value={valor} onChange={e => setValor(e.target.value)}
                 className="p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-yellow text-sm font-mono" />
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold uppercase text-text-secondary">Vigência Final</label>
+              <label className="text-xs font-bold uppercase text-text-secondary">Nova Vigência Final</label>
               <input type="date" value={dataVigencia} onChange={e => setDataVigencia(e.target.value)}
                 className="p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-yellow text-sm font-mono" />
             </div>
           </div>
 
+          {/* OBSERVACÃO */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-bold uppercase text-text-secondary">Observações Contratuais</label>
+            <textarea rows="3" placeholder="Insira detalhes adicionais sobre este instrumento legal..." value={observacao} onChange={e => setObservacao(e.target.value)}
+              className="p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-yellow text-sm resize-none" />
+          </div>
+
+          {/* BOTÕES DE AÇÃO */}
           <div className="pt-2 flex justify-end gap-2 border-t border-bg-hover">
             <button type="button" onClick={onClose}
               className="px-4 py-2 border border-bg-hover text-text-secondary text-sm font-semibold rounded hover:bg-bg-hover transition-colors">

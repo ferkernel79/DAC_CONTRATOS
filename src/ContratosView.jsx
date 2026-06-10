@@ -31,7 +31,9 @@ export default function ContratosView() {
   const [loadingDetalhes, setLoadingDetalhes] = useState(false);
   
   const [showModalFiscal, setShowModalFiscal] = useState(false);
-  const [showModalInstrumento, setShowModalInstrumento] = useState(false);
+  const [isModalInstrumentoOpen, setIsModalInstrumentoOpen] = useState(false);
+  const [instrumentoEmEdicao, setInstrumentoEmEdicao] = useState(null);
+  
   const [showModalContrato, setShowModalContrato] = useState(false);
 
   const fetchDetalhes = async () => {
@@ -329,92 +331,103 @@ export default function ContratosView() {
               </span>
             </div>
             <button 
-              onClick={() => setShowModalInstrumento('novo')}
-              className="px-3 py-1 bg-sop-yellow text-bg-body rounded text-xs font-bold hover:bg-sop-yellow/90 disabled:opacity-40 transition-colors" 
-              disabled={!contratoSelecionado}
+                onClick={() => {
+                  setInstrumentoEmEdicao(null); // Garante que a memória está vazia
+                  setIsModalInstrumentoOpen(true); // Abre o modal
+                }}
+                className="px-3 py-1 bg-sop-yellow text-bg-body rounded text-xs font-bold hover:bg-sop-yellow/90 disabled:opacity-40 transition-colors" 
+                disabled={!contratoSelecionado}
             >
               <i className="fas fa-plus mr-1"></i> Adicionar
-            </button>
-          </div>
+            </button>          </div>
           <div className="flex-1 overflow-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-bg-surface text-text-secondary text-[11px] uppercase tracking-wider sticky top-0 shadow-sm">
-                <tr>
-                  <th className="py-3 px-4 border-b border-bg-hover">Tipo</th>
-                  <th className="py-3 px-4 border-b border-bg-hover">Vigência</th>
-                  <th className="py-3 px-4 border-b border-bg-hover text-right">Valor</th>
-                </tr>
-              </thead>
-              <tbody>
-                {!contratoSelecionado ? (
-                  <tr><td colSpan="3" className="py-12 text-center text-text-muted">Selecione um contrato acima</td></tr>
-                ) : loadingDetalhes ? (
-                  <tr><td colSpan="3" className="py-12 text-center text-sop-yellow"><i className="fas fa-circle-notch fa-spin"></i></td></tr>
-                ) : instrumentos.length === 0 ? (
-                  <tr><td colSpan="3" className="py-12 text-center text-text-muted">Nenhum registro.</td></tr>
-                ) : (
-                  instrumentos.map((inst, idx) => (
-                    <tr key={inst.id || idx} className="border-b border-bg-hover group">
-                      <td className="py-3 px-4 font-medium text-text-primary">
-                        {inst.tipo || 'Instrumento'} <br/>
-                        <span className="text-[11px] text-text-secondary font-normal">{inst.identificacao || '-'}</span>
-                      </td>
-                      <td className="py-3 px-4 text-text-secondary">
-                        {inst.dataVigencia 
-                          ? (inst.dataVigencia.toDate 
-                              ? inst.dataVigencia.toDate() 
-                              : new Date(inst.dataVigencia)
-                            ).toLocaleDateString('pt-BR')
-                          : inst.fimDoContrato 
-                            ? (inst.fimDoContrato.toDate 
-                                ? inst.fimDoContrato.toDate() 
-                                : new Date(inst.fimDoContrato)
-                              ).toLocaleDateString('pt-BR')
-                            : '-'}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono text-sop-green font-semibold flex justify-end items-center gap-2">
-  {/* 1. VALOR FORMATADO: Tratamento limpo usando o formatador nativo */}
-  <span className="mr-2">
-    {inst.valor || inst.valorContrato
-      ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(inst.valor || inst.valorContrato)
-      : '-'}
-  </span>
+          <table className="w-full text-left border-collapse text-xs">
+  <thead className="bg-bg-body text-text-secondary uppercase text-[10px] tracking-wider sticky top-0">
+    <tr>
+      <th className="py-2 px-4 font-bold">Tipo</th>
+      <th className="py-2 px-4 font-bold">Identificação</th>
+      <th className="py-2 px-4 font-bold text-center">Vigência Final</th>
+      <th className="py-2 px-4 font-bold text-right">Valor Impactado</th>
+    </tr>
+  </thead>
+  <tbody>
+    {instrumentos && instrumentos.length > 0 ? (
+      instrumentos.map((inst) => (
+        <tr 
+          key={inst.id} 
+          className="group hover:bg-bg-hover border-b border-bg-hover transition-colors text-text-primary"
+        >
+          {/* COLUNA 1: TIPO */}
+          <td className="py-3 px-4 font-medium">{inst.tipo || 'Termo Aditivo'}</td>
+          
+          {/* COLUNA 2: IDENTIFICAÇÃO */}
+          <td className="py-3 px-4 text-text-secondary max-w-[150px] truncate" title={inst.identificacao}>
+            {inst.identificacao || '-'}
+          </td>
+          
+          {/* COLUNA 3: DATA VIGÊNCIA BLINDADA */}
+          <td className="py-3 px-4 text-center font-mono text-text-secondary whitespace-nowrap">
+            {inst.dataVigencia 
+              ? (inst.dataVigencia.toDate ? inst.dataVigencia.toDate() : new Date(inst.dataVigencia)).toLocaleDateString('pt-BR')
+              : '-'}
+          </td>
+          
+          {/* COLUNA 4: VALOR FORMATADO + BOTÕES DE AÇÃO INTERNOS */}
+          <td className="py-3 px-4 text-right font-mono text-sop-green font-semibold whitespace-nowrap">
+            <div className="flex justify-end items-center gap-2">
+              <span className="mr-1">
+                {inst.valor || inst.valorContrato
+                  ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(inst.valor || inst.valorContrato)
+                  : 'R$ 0,00'}
+              </span>
 
-  {/* 2. BOTÃO DE EDITAR INSTRUMENTO */}
-  <button 
-    type="button"
-    onClick={() => setShowModalInstrumento(inst)} 
-    className="text-text-secondary hover:text-sop-blue opacity-0 group-hover:opacity-100 transition-all p-1"
-    title="Editar Instrumento"
-  >
-    <i className="fas fa-pen text-xs"></i>
-  </button>
-
-  {/* 3. BOTÃO DE REMOVER INSTRUMENTO */}
-  <button 
-    type="button"
-    onClick={async (e) => {
-      e.stopPropagation(); // Impede de selecionar a linha de trás
-      if (window.confirm(`Deseja realmente remover este instrumento do sistema?`)) {
-        try {
-          await removerInstrumento(contratoSelecionado.id, inst.id);
-          fetchDetalhes();
-        } catch (err) {
-          alert("Erro ao remover: " + err.message);
-        }
-      }
-    }}
-    className="text-text-muted hover:text-sop-red opacity-0 group-hover:opacity-100 transition-all p-1"
-    title="Remover Instrumento"
-  >
-    <i className="fas fa-trash text-xs"></i>
-  </button>
-</td>                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+              {/* BOTÃO EDITAR (LÁPIS) */}
+              <button 
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  console.log("ENVIANDO DADOS PARA O MODAL:", inst); // Diagnóstico na origem!
+                  setInstrumentoEmEdicao(inst); // Carrega o aditivo na memória
+                  setIsModalInstrumentoOpen(true); // Abre a janela
+                }}
+                className="text-text-secondary hover:text-sop-blue opacity-0 group-hover:opacity-100 transition-all p-1"
+                title="Editar Instrumento"
+              >
+                <i className="fas fa-pen text-[11px]"></i>
+              </button>
+              {/* BOTÃO EXCLUIR (LIXEIRA) */}
+              <button 
+                type="button"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  if (window.confirm("Deseja realmente remover este instrumento do sistema?")) {
+                    try {
+                      await removerInstrumento(contratoSelecionado.id, inst.id);
+                      fetchDetalhes();
+                    } catch (err) {
+                      alert("Erro ao remover: " + err.message);
+                    }
+                  }
+                }}
+                className="text-text-muted hover:text-sop-red opacity-0 group-hover:opacity-100 transition-all p-1"
+                title="Remover Instrumento"
+              >
+                <i className="fas fa-trash text-[11px]"></i>
+              </button>
+            </div>
+          </td>
+        </tr>
+      ))
+    ) : (
+      <tr>
+        <td colSpan="4" className="py-4 text-center text-text-muted italic">
+          Nenhum instrumento contratual registrado.
+        </td>
+      </tr>
+    )}
+  </tbody>
+</table>          </div>
         </div>
 
         {/* PAINEL DE EQUIPE */}
@@ -496,20 +509,25 @@ export default function ContratosView() {
 
       </div>
 
-      {/* MODAIS DO SISTEMA */}
-      {showModalFiscal && (
+{/* MODAIS DO SISTEMA */}
+{showModalFiscal && (
         <ModalFiscal 
-        contratoId={contratoSelecionado.id} 
-        fiscalEdit={showModalFiscal === 'novo' ? null : showModalFiscal} // Passa os dados se for edição
-        onClose={() => setShowModalFiscal(false)}
-        onSuccess={fetchDetalhes}
+          contratoId={contratoSelecionado.id} 
+          fiscalEdit={showModalFiscal === 'novo' ? null : showModalFiscal}
+          onClose={() => setShowModalFiscal(false)}
+          onSuccess={fetchDetalhes}
         />
       )}
 
-      {showModalInstrumento && (
+      {/* NOVO MODAL DE INSTRUMENTOS BLINDADO (Agora no lugar certo) */}
+      {isModalInstrumentoOpen && (
         <ModalInstrumento 
           contratoId={contratoSelecionado.id} 
-          onClose={() => setShowModalInstrumento(false)}
+          instrumentoEdit={instrumentoEmEdicao} 
+          onClose={() => {
+            setIsModalInstrumentoOpen(false);
+            setInstrumentoEmEdicao(null); // Limpa a memória ao fechar
+          }}
           onSuccess={fetchDetalhes} 
         />
       )}

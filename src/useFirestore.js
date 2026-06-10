@@ -10,6 +10,7 @@ import {
   deleteDoc, 
   query, 
   onSnapshot,
+  deleteField,
   runTransaction
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
@@ -392,73 +393,102 @@ export const removerInstrumento = async (contratoId, instrumentoId) => {
 
 // --- MOTOR DE REGRAS DE NEGÓCIO DA DAC/SOP ---
 export const sincronizarPrazosEValores = async (contratoId) => {
-  const contratoRef = doc(db, 'contratos', contratoId);
-  const instRef = collection(db, 'contratos', contratoId, 'instrumentos');
-  
-  const snapInst = await getDocs(instRef);
-  const listaInstrumentos = snapInst.docs.map(d => ({ id: d.id, ...d.data() }));
+  try {
+    const contratoRef = doc(db, 'contratos', contratoId);
+    const instRef = collection(db, 'contratos', contratoId, 'instrumentos');
+    const snapshot = await getDocs(instRef);
 
-  // REGRA 1: [NÃO ATRIBUÍDO] - Se não houver nenhum instrumento relacionado
-  if (listaInstrumentos.length === 0) {
-    await updateDoc(contratoRef, {
-      vigenciaOficial: null,
-      valorTotal: 0,
-      statusContrato: '[NÃO ATRIBUÍDO]',
-      diasRestantes: null
-    });
-    return;
-  }
+    const contratoSnap = await getDoc(contratoRef);
+    if (!contratoSnap.exists()) return;
+    
+    const dadosContrato = contratoSnap.data();
+    
+    // 1. MARCO ZERO DO VALOR: Puxa o valor base histórico do contrato
+    let valorAcumulado = parseFloat(dadosContrato.valorOriginal || dadosContrato.valor || 0);
+    
+    // 2. MARCO ZERO DA DATA: Busca por todas as chaves possíveis do CSV (incluindo fimDoContrato)
+    let dataOriginalRaw = dadosContrato.dataVigenciaOriginal || 
+                           dadosContrato.fimDoContrato || 
+                           dadosContrato.dataVigencia || 
+                           dadosContrato.vigenciaOficial || 
+                           null;
 
-  // Converter datas e filtrar instrumentos válidos com data
-  const instrumentosComData = listaInstrumentos.map(inst => {
-    let dataProd = null;
-    if (inst.dataVigencia) {
-      dataProd = inst.dataVigencia.toDate ? inst.dataVigencia.toDate() : new Date(inst.dataVigencia);
+    // Converte o marco zero da data para um Objeto Date comparável
+    let dataMaiorVigenciaObj = null;
+    if (dataOriginalRaw) {
+      dataMaiorVigenciaObj = dataOriginalRaw.toDate ? dataOriginalRaw.toDate() : new Date(dataOriginalRaw);
     }
-    return { ...inst, dataConvertida: dataProd };
-  }).filter(inst => inst.dataConvertida !== null);
 
-  if (instrumentosComData.length === 0) return;
+    let houveRescisao = false;
 
-  // LÓGICA DA VIGÊNCIA: Identificar a MAIOR vigência entre os instrumentos
-  const instrumentoMaisLongo = instrumentosComData.reduce((maior, atual) => {
-    return atual.dataConvertida > maior.dataConvertida ? atual : maior;
-  }, instrumentosComData[0]);
+    // 3. PROCESSAMENTO DOS ADITIVOS
+    snapshot.forEach((docInst) => {
+      const inst = docInst.data();
+      const vInst = parseFloat(inst.valor || 0);
 
-  const maiorVigencia = instrumentoMaisLongo.dataConvertida;
+      // Regra Financeira: Acréscimo ou Supressão
+      if (inst.alteracoes?.supressao === true) {
+        valorAcumulado -= vInst; // Se for check de supressão, SUBTRAI do contrato
+      } else if (inst.alteracoes?.valor === true || inst.tipo === 'Contrato') {
+        valorAcumulado += vInst; // Se for check de valor ou contrato novo, SOMA
+      } else if (!inst.alteracoes && vInst > 0) {
+        // Retrocompatibilidade para registros antigos do CSV
+        valorAcumulado += vInst;
+      }
 
-  // LÓGICA DO VALOR: "A mesma lógica será utilizada para o valor"
-  // Captura o valor do instrumento que determinou a maior vigência (o aditivo/apostilamento mais recente)
-  const valorEfetivo = parseFloat(instrumentoMaisLongo.valor || 0);
+      // Regra de Prazo: Só estica a corda se o aditivo trouxer uma data superior
+      if (inst.dataVigencia) {
+        const dataInstObj = inst.dataVigencia.toDate ? inst.dataVigencia.toDate() : new Date(inst.dataVigencia);
+        
+        if (!dataMaiorVigenciaObj || dataInstObj > dataMaiorVigenciaObj) {
+          dataMaiorVigenciaObj = dataInstObj;
+        }
+      }
 
-  // CÁLCULO DOS DIAS RESTANTES (Baseado no dia de HOJE)
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
-  
-  const vigenciaZerada = new Date(maiorVigencia);
-  vigenciaZerada.setHours(0,0,0,0);
+      // Disjuntor de Rescisão: Força o encerramento na data do termo
+      if (inst.tipo === 'Termo de Rescisão') {
+        houveRescisao = true;
+        if (inst.dataVigencia) {
+          dataMaiorVigenciaObj = inst.dataVigencia.toDate ? inst.dataVigencia.toDate() : new Date(inst.dataVigencia);
+        }
+      }
+    });
 
-  const diffTime = vigenciaZerada - hoje;
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    // 4. RECALCULO DOS DIAS RESTANTES E DO ESTÁGIO
+    let diasRestantes = null;
+    let statusContrato = 'NÃO ATRIBUÍDO';
 
-  let statusCalculado = '[VIGENTE]';
-  
-  // REGRA 2: [NÃO VIGENTE] - Quando a vigência for menor que hoje
-  if (diffDays < 0) {
-    statusCalculado = '[NÃO VIGENTE]';
-  } 
-  // REGRA 3: [VIGENTE <XX] - Quando faltarem menos de 90 dias
-  else if (diffDays <= 90) {
-    statusCalculado = `[VIGENTE < ${diffDays} DIAS]`;
+    if (dataMaiorVigenciaObj) {
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+      dataMaiorVigenciaObj.setHours(0, 0, 0, 0);
+
+      const diffTime = dataMaiorVigenciaObj - hoje;
+      diasRestantes = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      if (houveRescisao || diasRestantes < 0) {
+        statusContrato = 'NÃO VIGENTE';
+      } else if (diasRestantes <= 90) {
+        statusContrato = `ALERTA (${diasRestantes} DIAS)`;
+      } else {
+        statusContrato = 'VIGENTE';
+      }
+    }
+
+    // 5. SALVAMENTO DA ATUALIZAÇÃO CONSOLIDADA NO PAI
+    await updateDoc(contratoRef, {
+      valorTotal: valorAcumulado,
+      vigenciaOficial: dataMaiorVigenciaObj, // Guarda como Timestamp nativo do Firebase
+      diasRestantes: diasRestantes,
+      statusContrato: statusContrato,
+      atualizadoEm: new Date()
+    });
+
+    console.log(`Contrato ${contratoId} sincronizado com sucesso! Novo Valor: R$ ${valorAcumulado}`);
+
+  } catch (error) {
+    console.error("Erro crítico na sincronização de prazos e valores:", error);
   }
-
-  // Grava tudo mastigado de volta no contrato pai
-  await updateDoc(contratoRef, {
-    vigenciaOficial: maiorVigencia,
-    valorTotal: valorEfetivo,
-    statusContrato: statusCalculado,
-    diasRestantes: diffDays
-  });
 };
 
 // --- FUNÇÃO PARA TOCAR O FLAG REVISADO RAPIDAMENTE VIA GRID ---
@@ -477,4 +507,37 @@ export const alternarRenovacaoContrato = async (contratoId, statusAtual) => {
     emRenovacao: !statusAtual,
     atualizadoEm: new Date()
   });
+};
+
+export const executarFaxinaTabelaContratos = async () => {
+  try {
+    const contratosRef = collection(db, 'contratos');
+    const snapshot = await getDocs(contratosRef);
+    
+    let totalProcessados = 0;
+
+    // Roda a esteira de atualização em paralelo para ir super rápido
+    const tarefas = snapshot.docs.map(async (docSnapshot) => {
+      const docRef = doc(db, 'contratos', docSnapshot.id);
+      
+      // 1. Remove os resquícios do campo estático antigo
+      await updateDoc(docRef, {
+        estagio: deleteField(),
+        estágio: deleteField()
+      });
+
+      // 2. DISPARO DE RECONSTRUÇÃO: Força o motor a recalcular o status real 
+      // baseado nos instrumentos existentes na subcoleção
+      await sincronizarPrazosEValores(docSnapshot.id);
+      
+      totalProcessados++;
+    });
+
+    await Promise.all(tarefas);
+    return totalProcessados;
+
+  } catch (error) {
+    console.error("Erro na sincronização em massa:", error);
+    throw error;
+  }
 };
