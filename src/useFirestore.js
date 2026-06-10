@@ -11,7 +11,8 @@ import {
   query, 
   onSnapshot,
   deleteField,
-  runTransaction
+  runTransaction,
+  collectionGroup
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
 
@@ -251,33 +252,50 @@ export const removerServidor = async (emailId) => {
 };
 
 // --- ATUALIZAÇÃO DA EQUIPE: ADICIONA FISCAL APENAS VINCULANDO O SERVIDOR ---
-export const adicionarFiscal = async (contratoId, dadosDesignacao) => {
-  if (!dadosDesignacao.funcao) {
-    throw new Error("A função é obrigatória.");
+export const adicionarFiscal = async (contratoId, fiscal) => {
+  try {
+    const fiscaisRef = collection(db, 'contratos', contratoId, 'fiscais');
+    await addDoc(fiscaisRef, { 
+      ...fiscal, 
+      criadoEm: new Date() // Marco cronológico definitivo
+    });
+  } catch (error) {
+    console.error("Erro ao adicionar fiscal:", error);
+    throw error;
   }
-
-  // Mantém a regra de ouro anterior: ID único por função para sobrescrever automaticamente
-  const docId = dadosDesignacao.funcao
-    .toLowerCase()
-    .trim()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]/g, '_')
-    .replace(/__+/g, '_');
-
-  const fiscalRef = doc(db, 'contratos', contratoId, 'fiscais', docId);
-
-  // Gravamos as informações desnormalizadas do servidor para exibição imediata e performática na grid
-  const dadosSeguros = limparDados({
-    servidorEmail: dadosDesignacao.servidorEmail.toLowerCase().trim(),
-    colaborador: dadosDesignacao.colaborador.toUpperCase().trim(), // Nome do servidor
-    funcao: dadosDesignacao.funcao.trim(),
-    dataPortaria: dadosDesignacao.dataPortaria || null,
-    designadoEm: new Date()
-  });
-
-  await setDoc(fiscalRef, dadosSeguros);
 };
+
+// 3. NOVA FUNÇÃO: Varre a base inteira e extrai uma lista limpa e única de servidores
+export const obterFiscaisCadastradosGlobal = async () => {
+  try {
+    const snapshot = await getDocs(collectionGroup(db, 'fiscais'));
+    const mapaFiscaisUnicos = new Map(); // <-- CORRIGIDO AQUI (Sem espaço)
+
+    snapshot.forEach(docSnap => {
+      const f = docSnap.data();
+      const nome = f.colaborador || f.nome;
+      const email = f.servidorEmail || f.email;
+
+      if (nome && email) {
+        const chaveUnica = nome.trim().toUpperCase();
+        // Se o servidor ainda não está no mapa, adiciona (evita duplicados)
+        if (!mapaFiscaisUnicos.has(chaveUnica)) {
+          mapaFiscaisUnicos.set(chaveUnica, {
+            nome: chaveUnica,
+            email: email.trim().toLowerCase()
+          });
+        }
+      }
+    });
+
+    // Retorna a lista ordenada alfabeticamente para o painel de sugestões
+    return Array.from(mapaFiscaisUnicos.values()).sort((a, b) => a.nome.localeCompare(b.nome));
+  } catch (error) {
+    console.error("Erro ao construir banco de dados de autocompletar:", error);
+    return [];
+  }
+};
+
 
 // --- HOOK DE ESCUTA EM TEMPO REAL DE USUÁRIOS ---
 export function useUsuarios() {

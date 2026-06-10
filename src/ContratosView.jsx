@@ -41,7 +41,16 @@ export default function ContratosView() {
     setLoadingDetalhes(true);
     try {
       const fiscaisSnap = await getDocs(collection(db, 'contratos', contratoSelecionado.id, 'fiscais'));
-      setFiscais(fiscaisSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const listaFiscais = fiscaisSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // ORDENAÇÃO CRONOLÓGICA: O primeiro a ser cadastrado (mais antigo) fica no topo da lista
+      listaFiscais.sort((a, b) => {
+        const tempoA = a.criadoEm?.toDate ? a.criadoEm.toDate().getTime() : 0;
+        const tempoB = b.criadoEm?.toDate ? b.criadoEm.toDate().getTime() : 0;
+        return tempoA - tempoB;
+      });
+      
+      setFiscais(listaFiscais);
 
       const instSnap = await getDocs(collection(db, 'contratos', contratoSelecionado.id, 'instrumentos'));
       setInstrumentos(instSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));

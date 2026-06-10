@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { adicionarFiscal, editarFiscal } from './useFirestore';
+import { adicionarFiscal, editarFiscal, obterFiscaisCadastradosGlobal } from './useFirestore';
 
 export default function ModalFiscal({ contratoId, fiscalEdit, onClose, onSuccess }) {
   const [funcao, setFuncao] = useState('Fiscal Técnico Titular');
@@ -7,14 +7,47 @@ export default function ModalFiscal({ contratoId, fiscalEdit, onClose, onSuccess
   const [servidorEmail, setServidorEmail] = useState('');
   const [salvando, setSalvando] = useState(false);
 
-  // Carrega os dados retroativamente se receber a propriedade de edição
+  // Estados para controle do Auto-completar
+  const [bancoFiscais, setBancoFiscais] = useState([]);
+  const [sugestoes, setSugestoes] = useState([]);
+  const [caixaAberta, setCaixaAberta] = useState(false);
+
+  // 1. Carrega sugestões históricas ao abrir o modal
   useEffect(() => {
+    const puxarHistorico = async () => {
+      const lista = await obterFiscaisCadastradosGlobal();
+      setBancoFiscais(lista);
+    };
+    puxarHistorico();
+
     if (fiscalEdit) {
       setFuncao(fiscalEdit.funcao || 'Fiscal Técnico Titular');
       setColaborador(fiscalEdit.colaborador || fiscalEdit.nome || '');
       setServidorEmail(fiscalEdit.servidorEmail || '');
     }
   }, [fiscalEdit]);
+
+  // 2. Monitora a digitação para filtrar os nomes em tempo real
+  const handleNomeInput = (texto) => {
+    setColaborador(texto);
+    
+    if (texto.trim().length > 1) {
+      const filtrados = bancoFiscais.filter(f => 
+        f.nome.toLowerCase().includes(texto.toLowerCase())
+      );
+      setSugestoes(filtrados);
+      setCaixaAberta(filtrados.length > 0);
+    } else {
+      setCaixaAberta(false);
+    }
+  };
+
+  // 3. Executa o Auto-preenchimento duplo
+  const aplicarSelecao = (fiscalSelecionado) => {
+    setColaborador(fiscalSelecionado.nome);
+    setServidorEmail(fiscalSelecionado.email);
+    setCaixaAberta(false);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -32,10 +65,8 @@ export default function ModalFiscal({ contratoId, fiscalEdit, onClose, onSuccess
       };
 
       if (fiscalEdit) {
-        // Modo Alteração
         await editarFiscal(contratoId, fiscalEdit.id, dadosForm);
       } else {
-        // Modo Novo Cadastro
         await adicionarFiscal(contratoId, dadosForm);
       }
 
@@ -60,7 +91,8 @@ export default function ModalFiscal({ contratoId, fiscalEdit, onClose, onSuccess
           <button onClick={onClose} className="text-text-muted hover:text-text-primary text-lg">&times;</button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="p-5 space-y-4" onClick={() => setCaixaAberta(false)}>
+          
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-bold uppercase text-text-secondary">Função Legal (Portaria)</label>
             <select value={funcao} onChange={e => setFuncao(e.target.value)}
@@ -74,14 +106,37 @@ export default function ModalFiscal({ contratoId, fiscalEdit, onClose, onSuccess
             </select>
           </div>
 
-          <div className="flex flex-col gap-1.5">
+          {/* CAMPO NOME COM CONTÊINER RELATIVO PARA AUTOCOMPLETAR */}
+          <div className="flex flex-col gap-1.5 relative" onClick={(e) => e.stopPropagation()}>
             <label className="text-xs font-bold uppercase text-text-secondary">Nome Completo do Servidor</label>
-            <input type="text" placeholder="Ex: GERMAN CANO" value={colaborador} onChange={e => setColaborador(e.target.value)}
-              className="p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-green text-sm uppercase" />
+            <input 
+              type="text" 
+              placeholder="Digite o nome para buscar..." 
+              value={colaborador} 
+              onChange={e => handleNomeInput(e.target.value)}
+              onFocus={() => colaborador.trim().length > 1 && setCaixaAberta(sugestoes.length > 0)}
+              className="p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-green text-sm uppercase w-full" 
+            />
+
+            {/* CAIXA FLUTUANTE DE SUGESTÕES */}
+            {caixaAberta && (
+              <ul className="absolute left-0 right-0 top-full mt-1 bg-bg-surface border border-bg-hover rounded-md shadow-xl max-h-40 overflow-y-auto z-50 divide-y divide-bg-hover">
+                {sugestoes.map((f, i) => (
+                  <li 
+                    key={i}
+                    onClick={() => aplicarSelecao(f)}
+                    className="p-2.5 text-xs font-medium hover:bg-sop-green hover:text-white cursor-pointer transition-colors flex flex-col gap-0.5"
+                  >
+                    <span className="font-bold uppercase">{f.nome}</span>
+                    <span className="text-[10px] opacity-80 font-mono">{f.email}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold uppercase text-text-secondary">E-mail Institucional (@sop.rs.gov.br)</label>
+            <label className="text-xs font-bold uppercase text-text-secondary">E-mail Institucional</label>
             <input type="email" placeholder="nome.sobrenome@sop.rs.gov.br" value={servidorEmail} onChange={e => setServidorEmail(e.target.value)}
               className="p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-green text-sm font-mono" />
           </div>
