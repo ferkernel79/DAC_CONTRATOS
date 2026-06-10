@@ -32,7 +32,7 @@ export default function ContratosView() {
   
   const [showModalFiscal, setShowModalFiscal] = useState(false);
   const [isModalInstrumentoOpen, setIsModalInstrumentoOpen] = useState(false);
-  const [instrumentoEmEdicao, setInstrumentoEmEdicao] = useState(null);
+  // const [instrumentoEmEdicao, setInstrumentoEmEdicao] = useState(null);
   
   const [showModalContrato, setShowModalContrato] = useState(false);
 
@@ -332,7 +332,7 @@ export default function ContratosView() {
             </div>
             <button 
                 onClick={() => {
-                  setInstrumentoEmEdicao(null); // Garante que a memória está vazia
+                  // setInstrumentoEmEdicao(null); // Garante que a memória está vazia
                   setIsModalInstrumentoOpen(true); // Abre o modal
                 }}
                 className="px-3 py-1 bg-sop-yellow text-bg-body rounded text-xs font-bold hover:bg-sop-yellow/90 disabled:opacity-40 transition-colors" 
@@ -380,23 +380,7 @@ export default function ContratosView() {
                   ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(inst.valor || inst.valorContrato)
                   : 'R$ 0,00'}
               </span>
-
-              {/* BOTÃO EDITAR (LÁPIS) */}
-              <button 
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  console.log("ENVIANDO DADOS PARA O MODAL:", inst); // Diagnóstico na origem!
-                  setInstrumentoEmEdicao(inst); // Carrega o aditivo na memória
-                  setIsModalInstrumentoOpen(true); // Abre a janela
-                }}
-                className="text-text-secondary hover:text-sop-blue opacity-0 group-hover:opacity-100 transition-all p-1"
-                title="Editar Instrumento"
-              >
-                <i className="fas fa-pen text-[11px]"></i>
-              </button>
-              {/* BOTÃO EXCLUIR (LIXEIRA) */}
+             {/* BOTÃO EXCLUIR (LIXEIRA) */}
               <button 
                 type="button"
                 onClick={async (e) => {
@@ -521,16 +505,12 @@ export default function ContratosView() {
 
       {/* NOVO MODAL DE INSTRUMENTOS BLINDADO (Agora no lugar certo) */}
       {isModalInstrumentoOpen && (
-        <ModalInstrumento 
-          contratoId={contratoSelecionado.id} 
-          instrumentoEdit={instrumentoEmEdicao} 
-          onClose={() => {
-            setIsModalInstrumentoOpen(false);
-            setInstrumentoEmEdicao(null); // Limpa a memória ao fechar
-          }}
-          onSuccess={fetchDetalhes} 
-        />
-      )}
+          <ModalInstrumento 
+            contratoId={contratoSelecionado.id} 
+            onClose={() => setIsModalInstrumentoOpen(false)}
+            onSuccess={fetchDetalhes} 
+          />
+        )}
 
       {showModalContrato && (
         <ModalContrato 

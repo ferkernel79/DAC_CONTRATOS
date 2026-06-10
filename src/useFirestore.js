@@ -166,34 +166,6 @@ export const editarContrato = async (contratoId, dadosAtualizados) => {
     transaction.update(contratoRef, dadosSeguros);
   });
 };
-
-// --- CRUD INSTRUMENTOS ---
-export const adicionarInstrumento = async (contratoId, dadosInstrumento) => {
-  const instRef = collection(db, 'contratos', contratoId, 'instrumentos');
-  const docRef = await addDoc(instRef, limparDados(dadosInstrumento));
-  await atualizarStatusContrato(contratoId);
-  return docRef;
-};
-// --- FUNÇÃO PARA ALTERAR UM INSTRUMENTO EXISTENTE ---
-export const editarInstrumento = async (contratoId, instrumentoId, dadosAtualizados) => {
-  try {
-    const instRef = doc(db, 'contratos', contratoId, 'instrumentos', instrumentoId);
-    
-    // Atualiza os dados do instrumento na subcoleção
-    await updateDoc(instRef, {
-      ...dadosAtualizados,
-      atualizadoEm: new Date()
-    });
-
-    // DISPARO CRÍTICO: Recalcula a vigência oficial e o valor do contrato pai
-    await sincronizarPrazosEValores(contratoId);
-
-  } catch (error) {
-    console.error("Erro ao editar instrumento no Firestore:", error);
-    throw error;
-  }
-};
-
 // --- FUNÇÃO PARA ALTERAR UM FISCAL EXISTENTE ---
 export const editarFiscal = async (contratoId, fiscalId, dadosAtualizados) => {
   try {
@@ -357,7 +329,7 @@ export const removerFornecedor = async (fornecedorId, perfilLogado) => {
   await deleteDoc(fornRef);
 };
 
-// Atualize a sua função de remover instrumento adicionando a trava:
+// MANTER APENAS ESTA VERSÃO CONSOLIDADA COM SEGURANÇA NO SEU useFirestore.js:
 export const removerInstrumento = async (contratoId, instrumentoId) => {
   try {
     // 1. Captura o e-mail do usuário que está logado no momento
@@ -366,23 +338,21 @@ export const removerInstrumento = async (contratoId, instrumentoId) => {
       throw new Error("Sessão expirada. Faça login novamente.");
     }
 
-    // 2. Busca o perfil correspondente na coleção 'usuarios' (forçando caixa baixa)
+    // 2. Busca o perfil correspondente na coleção 'usuarios'
     const userRef = doc(db, 'usuarios', emailAtual.toLowerCase().trim());
     const userSnap = await getDoc(userRef);
-    
-    // Captura o perfil e normaliza para maiúsculo
     const perfil = userSnap.data()?.perfil?.toUpperCase()?.trim();
 
-    // 3. Validação do disjuntor de segurança do Frontend
+    // 3. Validação de Segurança da DAC: Impede operadores comuns de apagarem o histórico
     if (perfil !== 'ADMINISTRADOR') {
-      throw new Error("ACESSO NEGADO: Operadores não possuem permissão para excluir registros.");
+      throw new Error("ACESSO NEGADO: Apenas Administradores podem excluir instrumentos contratuais.");
     }
 
-    // 4. Se passou pela trava, executa a exclusão na subcoleção
+    // 4. Executa a exclusão na subcoleção de aditivos
     const instRef = doc(db, 'contratos', contratoId, 'instrumentos', instrumentoId);
     await deleteDoc(instRef);
     
-    // 5. Recalcula os prazos e valores totais do contrato pai
+    // 5. GATILHO CRÍTICO: Aciona a nova calculadora linear para abater o valor/prazo do contrato pai
     await sincronizarPrazosEValores(contratoId);
 
   } catch (error) {
@@ -396,98 +366,112 @@ export const sincronizarPrazosEValores = async (contratoId) => {
   try {
     const contratoRef = doc(db, 'contratos', contratoId);
     const instRef = collection(db, 'contratos', contratoId, 'instrumentos');
-    const snapshot = await getDocs(instRef);
-
+    
+    // 1. Pega os dados brutos de nascimento do contrato
     const contratoSnap = await getDoc(contratoRef);
     if (!contratoSnap.exists()) return;
-    
-    const dadosContrato = contratoSnap.data();
-    
-    // 1. MARCO ZERO DO VALOR: Puxa o valor base histórico do contrato
-    let valorAcumulado = parseFloat(dadosContrato.valorOriginal || dadosContrato.valor || 0);
-    
-    // 2. MARCO ZERO DA DATA: Busca por todas as chaves possíveis do CSV (incluindo fimDoContrato)
-    let dataOriginalRaw = dadosContrato.dataVigenciaOriginal || 
-                           dadosContrato.fimDoContrato || 
-                           dadosContrato.dataVigencia || 
-                           dadosContrato.vigenciaOficial || 
-                           null;
+    const cDados = contratoSnap.data();
 
-    // Converte o marco zero da data para um Objeto Date comparável
-    let dataMaiorVigenciaObj = null;
-    if (dataOriginalRaw) {
-      dataMaiorVigenciaObj = dataOriginalRaw.toDate ? dataOriginalRaw.toDate() : new Date(dataOriginalRaw);
-    }
+    // Ponto de partida original (Garantia caso não existam aditivos ainda)
+    let valorCalculado = parseFloat(cDados.valorOriginal || cDados.valor || 0);
+    
+    let dataNascimentoRaw = cDados.dataVigenciaOriginal || cDados.fimDoContrato || cDados.dataVigencia || null;
+    let dataCalculadaObj = dataNascimentoRaw ? (dataNascimentoRaw.toDate ? dataNascimentoRaw.toDate() : new Date(dataNascimentoRaw)) : null;
 
     let houveRescisao = false;
 
-    // 3. PROCESSAMENTO DOS ADITIVOS
-    snapshot.forEach((docInst) => {
-      const inst = docInst.data();
-      const vInst = parseFloat(inst.valor || 0);
+    // 2. Varre os instrumentos: O valor informado SUBSTITUI o anterior (imutabilidade linear)
+    const snapshot = await getDocs(instRef);
+    
+    // Convertemos o snapshot em array e ordenamos por data de criação (ou ID) para garantir a ordem cronológica dos fatos
+    const docsOrdenados = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    
+    // Se houver campo criadoEm, usamos para garantir a esteira correta de evolução do contrato
+    docsOrdenados.sort((a, b) => {
+      const timeA = a.criadoEm?.toDate ? a.criadoEm.toDate().getTime() : 0;
+      const timeB = b.criadoEm?.toDate ? b.criadoEm.toDate().getTime() : 0;
+      return timeA - timeB;
+    });
 
-      // Regra Financeira: Acréscimo ou Supressão
-      if (inst.alteracoes?.supressao === true) {
-        valorAcumulado -= vInst; // Se for check de supressão, SUBTRAI do contrato
-      } else if (inst.alteracoes?.valor === true || inst.tipo === 'Contrato') {
-        valorAcumulado += vInst; // Se for check de valor ou contrato novo, SOMA
-      } else if (!inst.alteracoes && vInst > 0) {
-        // Retrocompatibilidade para registros antigos do CSV
-        valorAcumulado += vInst;
-      }
+    docsOrdenados.forEach((inst) => {
+      const valInst = parseFloat(inst.valor || 0);
 
-      // Regra de Prazo: Só estica a corda se o aditivo trouxer uma data superior
-      if (inst.dataVigencia) {
-        const dataInstObj = inst.dataVigencia.toDate ? inst.dataVigencia.toDate() : new Date(inst.dataVigencia);
-        
-        if (!dataMaiorVigenciaObj || dataInstObj > dataMaiorVigenciaObj) {
-          dataMaiorVigenciaObj = dataInstObj;
+      // NOVA REGRA SIMPLIFICADA: Se marcou que altera valor (seja aditivo ou supressão),
+      // o valor do instrumento passa a ser o NOVO VALOR REAL do contrato.
+      if (inst.alteracoes?.valor || inst.alteracoes?.supressao || inst.tipo === 'Contrato') {
+        if (valInst > 0) {
+          valorCalculado = valInst; // Substituição direta e pura!
         }
+      } else if (!inst.alteracoes && valInst > 0) {
+        // Retrocompatibilidade para dados legados do CSV
+        valorCalculado = valInst;
       }
 
-      // Disjuntor de Rescisão: Força o encerramento na data do termo
+      // Regra de Prazo: Se o instrumento alterou o prazo e trouxe nova data, ela substitui a linha do tempo
+      if (inst.alteracoes?.prazo && inst.dataVigencia) {
+        dataCalculadaObj = inst.dataVigencia.toDate ? inst.dataVigencia.toDate() : new Date(inst.dataVigencia);
+      } else if (!inst.alteracoes && inst.dataVigencia) {
+        // Retrocompatibilidade
+        dataCalculadaObj = inst.dataVigencia.toDate ? inst.dataVigencia.toDate() : new Date(inst.dataVigencia);
+      }
+
+      // Termo de Rescisão: Encerra o contrato imediatamente na data estipulada
       if (inst.tipo === 'Termo de Rescisão') {
         houveRescisao = true;
         if (inst.dataVigencia) {
-          dataMaiorVigenciaObj = inst.dataVigencia.toDate ? inst.dataVigencia.toDate() : new Date(inst.dataVigencia);
+          dataCalculadaObj = inst.dataVigencia.toDate ? inst.dataVigencia.toDate() : new Date(inst.dataVigencia);
         }
       }
     });
 
-    // 4. RECALCULO DOS DIAS RESTANTES E DO ESTÁGIO
+    // 3. Recalcula o Estágio obrigatório baseado na fotografia final
     let diasRestantes = null;
-    let statusContrato = 'NÃO ATRIBUÍDO';
+    let statusFinal = 'NÃO ATRIBUÍDO';
 
-    if (dataMaiorVigenciaObj) {
+    if (dataCalculadaObj) {
       const hoje = new Date();
       hoje.setHours(0, 0, 0, 0);
-      dataMaiorVigenciaObj.setHours(0, 0, 0, 0);
+      const venc = new Date(dataCalculadaObj);
+      venc.setHours(0, 0, 0, 0);
 
-      const diffTime = dataMaiorVigenciaObj - hoje;
-      diasRestantes = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      const diff = Math.ceil((venc - hoje) / (1000 * 60 * 60 * 24));
+      diasRestantes = diff;
 
-      if (houveRescisao || diasRestantes < 0) {
-        statusContrato = 'NÃO VIGENTE';
-      } else if (diasRestantes <= 90) {
-        statusContrato = `ALERTA (${diasRestantes} DIAS)`;
+      if (houveRescisao || diff < 0) {
+        statusFinal = 'NÃO VIGENTE';
+      } else if (diff <= 90) {
+        statusFinal = `ALERTA (${diff} DIAS)`;
       } else {
-        statusContrato = 'VIGENTE';
+        statusFinal = 'VIGENTE';
       }
     }
 
-    // 5. SALVAMENTO DA ATUALIZAÇÃO CONSOLIDADA NO PAI
+    // 4. Grava a verdade atualizada na raiz do contrato pai
     await updateDoc(contratoRef, {
-      valorTotal: valorAcumulado,
-      vigenciaOficial: dataMaiorVigenciaObj, // Guarda como Timestamp nativo do Firebase
+      valorTotal: valorCalculado,
+      vigenciaOficial: dataCalculadaObj,
       diasRestantes: diasRestantes,
-      statusContrato: statusContrato,
+      statusContrato: statusFinal,
       atualizadoEm: new Date()
     });
 
-    console.log(`Contrato ${contratoId} sincronizado com sucesso! Novo Valor: R$ ${valorAcumulado}`);
+    console.log(`[DAC] Contrato ${contratoId} recalculado por substituição. Novo teto: R$ ${valorCalculado}`);
 
   } catch (error) {
-    console.error("Erro crítico na sincronização de prazos e valores:", error);
+    console.error("Erro no motor de substituição: ", error);
+  }
+};
+
+// MANTER APENAS ESTA VERSÃO NO SEU useFirestore.js:
+export const adicionarInstrumento = async (contratoId, instrumento) => {
+  try {
+    const instRef = collection(db, 'contratos', contratoId, 'instrumentos');
+    await addDoc(instRef, { ...instrumento, criadoEm: new Date() });
+    
+    // Esse é o gatilho que faz a mágica de somar/subtrair e recalcular o estágio
+    await sincronizarPrazosEValores(contratoId); 
+  } catch (error) {
+    throw error;
   }
 };
 
