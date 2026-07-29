@@ -24,6 +24,7 @@ export default function ContratosView() {
   const [filtroProa, setFiltroProa] = useState('');
   const [filtroForn, setFiltroForn] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('Todos');
+  const [filtroClassificacao, setFiltroClassificacao] = useState('Todas');
 
   const [contratoSelecionado, setContratoSelecionado] = useState(null);
   const [fiscais, setFiscais] = useState([]);
@@ -65,53 +66,64 @@ export default function ContratosView() {
     fetchDetalhes();
   }, [contratoSelecionado]);
 
-  // --- CALCULADOR DE STATUS DE EMERGÊNCIA PARA LINHAS SEM STATUS GRAVADO ---
-  const obterStatusReal = (c) => {
-    // Se o motor já gravou o status oficial no banco, usa ele (prioridade máxima)
-    if (c.statusContrato) return c.statusContrato;
-    
-    // Fallback: Se o banco estiver em branco, calcula dinamicamente com base nas datas legadas
-    const dataVigenciaRaw = c.vigenciaOficial || c.fimDoContrato || c.dataVigencia;
-    if (!dataVigenciaRaw) return '[NÃO ATRIBUÍDO]';
-    
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
-    const dataVenc = dataVigenciaRaw.toDate ? dataVigenciaRaw.toDate() : new Date(dataVigenciaRaw);
-    dataVenc.setHours(0, 0, 0, 0);
-    
-    const diffTime = dataVenc - hoje;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    if (diffDays < 0) return 'NÃO VIGENTE';
-    if (diffDays <= 90) return `ALERTA (${diffDays} DIAS)`;
-    return 'VIGENTE';
-  };
-  const contratosFiltrados = contratos.filter(c => {
-    // Normaliza o status para caixa baixa para evitar conflito de maiúsculas/minúsculas
-    const statusLimpo = (c.statusContrato || c.estagio || '').toLowerCase();
-    
-    const matchBusca = (c.fornecedorNome?.toLowerCase() || '').includes(busca.toLowerCase()) || 
-                       (c.descricao?.toLowerCase() || '').includes(busca.toLowerCase()) ||
-                       (c.objeto?.toLowerCase() || '').includes(busca.toLowerCase());
-                       
-    const matchProa = (c.proaOriginal || c.id).includes(filtroProa);
-    const matchForn = (c.fornecedorNome?.toLowerCase() || '').includes(filtroForn.toLowerCase());
-    
-    // --- NOVA INTELIGÊNCIA DE FILTRAGEM POR STATUS DA DAC ---
-    const matchStatus = filtroStatus === 'Todos' || 
-                        // Filtra tudo que está ativo (regras normais e alertas de prazo)
-                        (filtroStatus === 'Vigente' && statusLimpo.includes('vigente') && !statusLimpo.includes('não')) ||
-                        // Filtra cirurgicamente apenas os contratos críticos com menos de 90 dias restante
-                        (filtroStatus === 'Alerta' && statusLimpo.includes('<')) ||
-                        // Filtra contratos vencidos ou legados encerrados
-                        (filtroStatus === 'NaoVigente' && (statusLimpo.includes('não vigente') || statusLimpo.includes('encerrado'))) ||
-                        // Filtra contratos novos que ainda não possuem nenhum termo/instrumento
-                        (filtroStatus === 'NaoAtribuido' && statusLimpo.includes('não atribuído'));
-    
-    return matchBusca && matchProa && matchForn && matchStatus;
-  });
+// --- CALCULADOR DE STATUS AO VIVO (Descongelado) ---
+const obterStatusReal = (c) => {
+  // 1. Se o contrato foi marcado explicitamente como inativo/encerrado, respeita o banco
+  const stBanco = (c.statusContrato || '').toUpperCase();
+  if (stBanco.includes('NÃO VIGENTE') || stBanco.includes('ENCERRADO')) {
+    return stBanco; 
+  }
+  if (stBanco.includes('NÃO ATRIBUÍDO') && !c.vigenciaOficial && !c.fimDoContrato) {
+    return 'NÃO ATRIBUÍDO';
+  }
+  
+  
+  // 2. Calcula a vigência real baseada na data de hoje
+  const dataVigenciaRaw = c.vigenciaOficial || c.fimDoContrato || c.dataVigencia;
+  if (!dataVigenciaRaw) return 'NÃO ATRIBUÍDO';
+  
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  const dataVenc = dataVigenciaRaw.toDate ? dataVigenciaRaw.toDate() : new Date(dataVigenciaRaw);
+  dataVenc.setHours(0, 0, 0, 0);
+  
+  const diffTime = dataVenc - hoje;
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  if (diffDays < 0) return 'NÃO VIGENTE';
+  if (diffDays <= 90) return `ALERTA (${diffDays} DIAS)`;
+  return 'VIGENTE';
+};
 
-  if (loading) return <div className="flex justify-center items-center h-full"><i className="fas fa-circle-notch fa-spin text-4xl text-sop-green"></i></div>;
+const contratosFiltrados = contratos.filter(c => {
+  // 1. USA O STATUS CALCULADO AO VIVO
+  const statusReal = obterStatusReal(c).toLowerCase();
+  
+  // 2. FILTROS DE TEXTO LIVRE
+  const matchBusca = (c.fornecedorNome?.toLowerCase() || '').includes(busca.toLowerCase()) || 
+                     (c.descricao?.toLowerCase() || '').includes(busca.toLowerCase()) ||
+                     (c.objeto?.toLowerCase() || '').includes(busca.toLowerCase());
+                     
+  const matchProa = (c.proaOriginal || c.id).includes(filtroProa);
+  const matchForn = (c.fornecedorNome?.toLowerCase() || '').includes(filtroForn.toLowerCase());
+  
+  // 3. NOVO FILTRO: CLASSIFICAÇÃO
+  const classifContrato = (c.classificacao || '').trim().toUpperCase();
+  const matchClassificacao = filtroClassificacao === 'Todas' || 
+                             classifContrato === filtroClassificacao.toUpperCase();
+
+  // 4. INTELIGÊNCIA DE FILTRAGEM POR STATUS
+  const matchStatus = filtroStatus === 'Todos' || 
+                      (filtroStatus === 'Vigente' && statusReal === 'vigente') ||
+                      (filtroStatus === 'Alerta' && statusReal.includes('alerta')) ||
+                      (filtroStatus === 'NaoVigente' && (statusReal.includes('não vigente') || statusReal.includes('encerrado'))) ||
+                      (filtroStatus === 'NaoAtribuido' && statusReal.includes('não atribuído'));
+  
+  // 5. RETORNO UNIFICADO (Agora o matchClassificacao está ativo aqui!)
+  return matchBusca && matchProa && matchForn && matchClassificacao && matchStatus;
+});
+
+if (loading) return <div className="flex justify-center items-center h-full"><i className="fas fa-circle-notch fa-spin text-4xl text-sop-green"></i></div>;
   if (error) return <div className="p-4 bg-sop-red/20 border border-sop-red text-sop-red rounded-lg m-6">{error}</div>;
 
   return (
@@ -128,6 +140,30 @@ export default function ContratosView() {
           <label className="text-xs text-text-secondary uppercase tracking-widest font-bold">PROA</label>
           <input type="text" placeholder="00/0000..." value={filtroProa} onChange={e => setFiltroProa(e.target.value)}
             className="p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-green text-sm w-full" />
+        </div>
+        {/* NOVO FILTRO DE CLASSIFICAÇÃO */}
+        <div className="flex flex-col gap-2 flex-1">
+          <label className="text-xs text-text-secondary uppercase tracking-widest font-bold">Classificação</label>
+          <select 
+            value={filtroClassificacao} 
+            onChange={e => setFiltroClassificacao(e.target.value)}
+            className="p-2.5 bg-bg-body border border-bg-hover text-text-primary rounded-md outline-none focus:border-sop-green text-sm w-full font-medium"
+          >
+            <option value="Todas">Todas as Categorias</option>
+            <option value="Serviços especializados">Serviços especializados</option>
+            <option value="Locação de imóveis">Locação de imóveis</option>
+            <option value="Conservação e manutenção">Conservação e manutenção</option>
+            <option value="Correspondência">Correspondência</option>
+            <option value="Locação de veículos">Locação de veículos</option>
+            <option value="Locação de bens">Locação de bens</option>
+            <option value="Telefonia">Telefonia</option>
+            <option value="Jornais, Revistas e Periódicos">Jornais, Revistas e Periódicos</option>
+            <option value="Obras e serviços de engenharia">Obras e serviços de engenharia</option>
+            <option value="Serviços de Alarme e Monitoramento">Serviços de Alarme e Monitoramento</option>
+            <option value="Software">Software</option>
+            <option value="Serviços de TI">Serviços de TI</option>
+            <option value="Aquisição de Bens de Capital">Aquisição de Bens de Capital</option>
+          </select>
         </div>
         <div className="flex flex-col gap-2 flex-1">
           <label className="text-xs text-text-secondary uppercase tracking-widest font-bold">Fornecedor</label>
@@ -147,7 +183,8 @@ export default function ContratosView() {
             <option value="NaoVigente">Não Vigentes (Vencidos)</option>
             <option value="NaoAtribuido">Não Atribuídos (Sem Instrumento)</option>
           </select>
-        </div>      </section>
+        </div>
+      </section>
 
       {/* DASHBOARD GRID */}
       <div className="p-[25px] grid gap-[25px] flex-1 overflow-hidden" style={{ gridTemplateColumns: '1fr 1fr', gridTemplateRows: '55% minmax(0, 1fr)' }}>

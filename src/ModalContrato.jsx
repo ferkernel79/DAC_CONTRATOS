@@ -182,7 +182,7 @@ export default function ModalContrato({ onClose, contratoEdit }) {
                 <option value="Serviços de Alarme e Monitoramento">Serviços de Alarme e Monitoramento</option>
                 <option value="Software">Software</option>
                 <option value="Serviços de TI">Serviços de TI</option>
-
+                <option value="Aquisição de Bens de Capital">Aquisição de Bens de Capital</option>
               </select>
             </div>
             <div>
