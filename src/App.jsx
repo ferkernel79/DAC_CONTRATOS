@@ -5,6 +5,7 @@ import ContratosView from './ContratosView';
 import FornecedoresView from './FornecedoresView';
 import UsuariosView from './UsuariosView'; // Nova View de acessos
 import DashboardView from './DashboardView';
+import RenovacoesView from './RenovacoesView';
 
 function PainelPrincipalSOP() {
   const [menuRetraido, setMenuRetraido] = useState(false);
@@ -82,7 +83,19 @@ useEffect(() => {
             {!menuRetraido && <span className="truncate">Contratos</span>}
           </button>
 
-          {/* BOTÃO 3: FORNECORES (Recuperado e Blindado) */}
+          {/* BOTÃO 3: RENOVAÇÕES (Aba Nova) */}
+          <button 
+            onClick={() => setAbaAtiva('renovacoes')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              abaAtiva === 'renovacoes' ? 'bg-sop-blue text-white' : 'text-text-secondary hover:bg-bg-hover text-text-primary'
+            } ${menuRetraido ? 'justify-center' : ''}`}
+            title="Esteira de Renovações"
+          >
+            <i className="fas fa-sync-alt w-5 text-center text-base"></i>
+            {!menuRetraido && <span className="truncate">Em Renovação</span>}
+          </button>
+
+          {/* BOTÃO 4: FORNECEDORES */}
           <button 
             onClick={() => setAbaAtiva('fornecedores')}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
@@ -94,7 +107,7 @@ useEffect(() => {
             {!menuRetraido && <span className="truncate">Fornecedores</span>}
           </button>
 
-          {/* BOTÃO 4: USUÁRIOS (Apenas se o perfil logado for ADMIN) */}
+          {/* BOTÃO 5: USUÁRIOS */}
           {perfil === 'ADMINISTRADOR' && (
             <button 
               onClick={() => setAbaAtiva('usuarios')}
@@ -146,6 +159,7 @@ useEffect(() => {
         {abaAtiva === 'contratos' && <ContratosView />}
         {abaAtiva === 'fornecedores' && <FornecedoresView />}
         {abaAtiva === 'usuarios' && perfil === 'ADMINISTRADOR' && <UsuariosView />}
+        {abaAtiva === 'renovacoes' && <RenovacoesView />}
         {/* ... restante das abas ... */}
       </main>
   

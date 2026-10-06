@@ -41,7 +41,7 @@ export default function DashboardView() {
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
     if (diffDays < 0) return 'NÃO VIGENTE';
-    if (diffDays <= 90) return `ALERTA (${diffDays} DIAS)`;
+    if (diffDays <= 120) return `ALERTA (${diffDays} DIAS)`;
     return 'VIGENTE';
   };
 
@@ -166,7 +166,7 @@ export default function DashboardView() {
         {/* TABELA DE ALERTAS 90 DIAS */}
         <div className="lg:col-span-7 bg-bg-surface border border-bg-hover rounded-xl shadow-md flex flex-col h-[340px] overflow-hidden">
           <div className="px-5 py-3 border-b border-bg-hover bg-white/5 text-xs font-bold uppercase text-text-primary tracking-wider flex items-center gap-2">
-            <i className="fas fa-exclamation-circle text-amber-500 animate-pulse"></i> Próximos Vencimentos Críticos (&lt; 90 dias)
+            <i className="fas fa-exclamation-circle text-amber-500 animate-pulse"></i> Próximos Vencimentos Críticos (&lt; 120 dias)
           </div>
           <div className="flex-1 overflow-auto">
             <table className="w-full text-left text-xs border-collapse">

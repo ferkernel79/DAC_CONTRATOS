@@ -5,259 +5,195 @@ import {
   getDoc, 
   getDocs, 
   setDoc, 
-  addDoc, 
   updateDoc, 
   deleteDoc, 
+  writeBatch, 
   query, 
-  onSnapshot,
-  deleteField,
-  runTransaction,
-  collectionGroup
+  onSnapshot 
 } from 'firebase/firestore';
-import { db, auth } from './firebase';
+import { db } from './firebase';
 
-// --- ESCUDO ANTI-UNDEFINED (REGRA DE OURO) ---
-const limparDados = (obj) => {
-  const objLimpo = {};
-  for (const [key, value] of Object.entries(obj)) {
-    if (value !== undefined) {
-      objLimpo[key] = value;
-    }
-  }
-  return objLimpo;
-};
-
-// --- HOOKS DE ESCUTA EM TEMPO REAL ---
-
-export function useContratos() {
+// ============================================================================
+// 1. HOOK PRINCIPAL: LISTAGEM DE CONTRATOS EM TEMPO REAL
+// ============================================================================
+export const useContratos = () => {
   const [contratos, setContratos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     const q = query(collection(db, 'contratos'));
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const dados = querySnapshot.docs.map(docSnap => ({
-        id: docSnap.id,
-        ...docSnap.data()
-      }));
-      setContratos(dados);
-      setLoading(false);
-    }, (err) => {
-      console.error(err);
-      setError('Sem permissão ou falha de ligação. Verifique as regras de segurança.');
-      setLoading(false);
-    });
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const lista = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...d.data()
+        }));
+        setContratos(lista);
+        setLoading(false);
+      },
+      (err) => {
+        console.error("Erro no onSnapshot de contratos:", err);
+        setError(err.message);
+        setLoading(false);
+      }
+    );
 
     return () => unsubscribe();
   }, []);
 
   return { contratos, loading, error };
-}
-
-export function useFornecedores() {
-  const [fornecedores, setFornecedores] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    const q = query(collection(db, 'fornecedores'));
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const dados = querySnapshot.docs.map(docSnap => ({
-        id: docSnap.id,
-        ...docSnap.data()
-      }));
-      setFornecedores(dados);
-      setLoading(false);
-    }, (err) => {
-      console.error(err);
-      setError('Falha ao carregar fornecedores. Verifique as permissões.');
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  return { fornecedores, loading, error };
-}
-
-// --- MOTOR DE RECÁLCULO DE INSTRUMENTOS (BLINDADO E RESILIENTE) ---
-export const atualizarStatusContrato = async (contratoId) => {
-  const instRef = collection(db, 'contratos', contratoId, 'instrumentos');
-  const snap = await getDocs(instRef);
-  
-  let maxData = null;
-  let maxTimestamp = null;
-  let temRescisao = false;
-
-  snap.forEach(docSnap => {
-    const data = docSnap.data();
-    if (data.tipo === 'Rescisão') temRescisao = true;
-
-    if (data.fimDoContrato) {
-      const ts = data.fimDoContrato.toMillis();
-      if (!maxTimestamp || ts > maxTimestamp) {
-        maxTimestamp = ts;
-        maxData = data.fimDoContrato;
-      }
-    }
-  });
-
-  let novaSituacao = 'Ativo';
-  if (temRescisao) novaSituacao = 'Rescindido';
-  else if (!maxData) novaSituacao = 'Sem vigência definida';
-
-  let novoEstagio = 'Sem Instrumentos';
-  if (maxData) {
-    const dataVigencia = new Date(maxTimestamp);
-    dataVigencia.setHours(0,0,0,0);
-    const dataAtual = new Date();
-    dataAtual.setHours(0,0,0,0);
-    const dataMais90 = new Date(dataAtual);
-    dataMais90.setDate(dataMais90.getDate() + 90);
-
-    if (dataVigencia > dataMais90) novoEstagio = 'Vigente';
-    else if (dataVigencia >= dataAtual && dataVigencia <= dataMais90) novoEstagio = 'Vencendo';
-    else if (dataVigencia < dataAtual) novoEstagio = 'Não vigente';
-  }
-
-  const contratoRef = doc(db, 'contratos', contratoId);
-  try {
-    // Tenta atualizar assumindo que a capa já existe
-    await updateDoc(contratoRef, limparDados({
-      situacao: novaSituacao,
-      estagio: novoEstagio,
-      vigenciaOficial: maxData || null
-    }));
-  } catch (error) {
-    // Se a capa não existir, cria o documento básico em modo merge para não quebrar a carga
-    await setDoc(contratoRef, limparDados({
-      proaOriginal: contratoId.replace(/(\d{2})(\d{4})(\d{7})(\d{1})/, '$1/$2-$3-$4'),
-      situacao: novaSituacao,
-      estagio: novoEstagio,
-      vigenciaOficial: maxData || null,
-      objeto: "Contrato Inicial Semeado via Histórico de Instrumentos"
-    }), { merge: true });
-  }
 };
 
-// --- CRUD CONTRATOS ---
+// ============================================================================
+// 2. OPERAÇÕES BÁSICAS DE CONTRATOS (CRUD)
+// ============================================================================
 export const adicionarContrato = async (dadosContrato) => {
-  const docId = dadosContrato.proaOriginal.replace(/[^a-zA-Z0-9]/g, '');
-  const contratoRef = doc(db, 'contratos', docId);
-  
-  const dadosSeguros = limparDados({
-    situacao: 'Sem vigência definida',
-    estagio: 'Sem Instrumentos',
-    ...dadosContrato
-  });
-
-  await setDoc(contratoRef, dadosSeguros, { merge: true });
-};
-
-export const editarContrato = async (contratoId, dadosAtualizados) => {
-  const contratoRef = doc(db, 'contratos', contratoId);
-  const dadosSeguros = limparDados(dadosAtualizados);
-
-  await runTransaction(db, async (transaction) => {
-    const contratoDoc = await transaction.get(contratoRef);
-    if (!contratoDoc.exists()) {
-      throw new Error("O contrato não existe na base de dados.");
-    }
-    transaction.update(contratoRef, dadosSeguros);
-  });
-};
-// --- FUNÇÃO PARA ALTERAR UM FISCAL EXISTENTE ---
-export const editarFiscal = async (contratoId, fiscalId, dadosAtualizados) => {
   try {
-    const fiscalRef = doc(db, 'contratos', contratoId, 'fiscais', fiscalId);
-    
-    await updateDoc(fiscalRef, {
-      ...dadosAtualizados,
+    const proaLimpo = (dadosContrato.proaOriginal || dadosContrato.proa || dadosContrato.id || '').trim();
+    const idSeguro = proaLimpo.replace(/\//g, '-');
+    const contratoRef = doc(db, 'contratos', idSeguro);
+
+    await setDoc(contratoRef, {
+      ...dadosContrato,
+      id: idSeguro,
+      proaOriginal: proaLimpo,
+      proa: proaLimpo,
+      emRenovacao: dadosContrato.emRenovacao || false,
+      criadoEm: new Date(),
       atualizadoEm: new Date()
-    });
-    
-    console.log("Fiscal atualizado com sucesso");
+    }, { merge: true });
+
+    return idSeguro;
   } catch (error) {
-    console.error("Erro ao editar fiscal no Firestore:", error);
+    console.error("Erro ao adicionar contrato:", error);
     throw error;
   }
 };
 
-export const removerFiscal = async (contratoId, fiscalId) => {
-  const fiscalRef = doc(db, 'contratos', contratoId, 'fiscais', fiscalId);
-  return await deleteDoc(fiscalRef);
-};
-
-// --- CRUD FORNECEDORES ---
-export const salvarFornecedor = async (dadosFornecedor) => {
-  const docId = dadosFornecedor.cnpj.replace(/[^0-9]/g, '');
-  if (docId.length !== 14 && docId.length !== 11) {
-    throw new Error("O identificador deve conter exatamente 14 dígitos (CNPJ) ou 11 dígitos (CPF).");
-  }
-  const fornRef = doc(db, 'fornecedores', docId);
-  const dadosSeguros = limparDados({
-    cnpj: docId,
-    nome: dadosFornecedor.nome.toUpperCase().trim(),
-    email: dadosFornecedor.email?.toLowerCase().trim() || null,
-    telefone: dadosFornecedor.telefone?.trim() || null,
-    atualizadoEm: new Date()
-  });
-  await setDoc(fornRef, dadosSeguros, { merge: true });
-};
-
-
-// --- HOOK DE ESCUTA EM TEMPO REAL DE SERVIDORES ---
-export function useServidores() {
-  const [servidores, setServidores] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const q = query(collection(db, 'servidores'));
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const dados = querySnapshot.docs.map(docSnap => ({
-        id: docSnap.id,
-        ...docSnap.data()
-      }));
-      setServidores(dados);
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  return { servidores, loading };
-}
-
-// --- CRUD SERVIDORES (CHAVE PRIMÁRIA = EMAIL) ---
-export const salvarServidor = async (dadosServidor) => {
-  const emailId = dadosServidor.email.toLowerCase().trim();
-  if (!emailId.includes('@')) {
-    throw new Error("E-mail inválido para chave primária.");
-  }
-  
-  const servidorRef = doc(db, 'servidores', emailId);
-  const dadosSeguros = limparDados({
-    email: emailId,
-    nome: dadosServidor.nome.toUpperCase().trim(),
-    telefone: dadosServidor.telefone?.trim() || null,
-    atualizadoEm: new Date()
-  });
-
-  await setDoc(servidorRef, dadosSeguros, { merge: true });
-};
-
-export const removerServidor = async (emailId) => {
-  const servidorRef = doc(db, 'servidores', emailId);
-  await deleteDoc(servidorRef);
-};
-
-// --- ATUALIZAÇÃO DA EQUIPE: ADICIONA FISCAL APENAS VINCULANDO O SERVIDOR ---
-export const adicionarFiscal = async (contratoId, fiscal) => {
+// --- ATUALIZAR/EDITAR CONTRATO EXISTENTE ---
+export const editarContrato = async (id, dadosAtualizados) => {
   try {
-    const fiscaisRef = collection(db, 'contratos', contratoId, 'fiscais');
-    await addDoc(fiscaisRef, { 
-      ...fiscal, 
-      criadoEm: new Date() // Marco cronológico definitivo
+    const idSeguro = String(id).trim().replace(/\//g, '-');
+    const contratoRef = doc(db, 'contratos', idSeguro);
+
+    await setDoc(contratoRef, {
+      ...dadosAtualizados,
+      atualizadoEm: new Date()
+    }, { merge: true });
+
+    return idSeguro;
+  } catch (error) {
+    console.error("Erro ao editar contrato:", error);
+    throw error;
+  }
+};
+
+export const alternarRevisadoContrato = async (id, estadoAtual) => {
+  try {
+    const idSeguro = String(id).trim().replace(/\//g, '-');
+    const docRef = doc(db, 'contratos', idSeguro);
+    await setDoc(docRef, {
+      revisado: !estadoAtual,
+      atualizadoEm: new Date()
+    }, { merge: true });
+  } catch (error) {
+    console.error("Erro ao alternar revisão:", error);
+    throw error;
+  }
+};
+
+// ============================================================================
+// 3. ESTEIRA DE RENOVAÇÕES
+// ============================================================================
+export const alternarRenovacaoContrato = async (id, estadoAtual) => {
+  try {
+    // 1. Usa o id exato do documento sem tentar alterar traço/barra na rota
+    const docId = String(id).trim();
+    const docRef = doc(db, 'contratos', docId);
+
+    // 2. Grava tanto no booleano quanto no timestamp
+    const novoValor = !Boolean(estadoAtual);
+
+    await setDoc(docRef, {
+      emRenovacao: novoValor,
+      atualizadoEm: new Date()
+    }, { merge: true });
+
+    console.log(`[RENOVAÇÃO] Documento '${docId}' atualizado para emRenovacao = ${novoValor}`);
+  } catch (error) {
+    console.error("Erro em alternarRenovacaoContrato:", error);
+    throw error;
+  }
+};
+
+export const atribuirAnalistaRenovacao = async (contratoId, nomeAnalista, observacoes = '') => {
+  try {
+    const docId = String(contratoId).trim();
+    const contratoRef = doc(db, 'contratos', docId);
+
+    await setDoc(contratoRef, {
+      analistaRenovacao: nomeAnalista,
+      observacoesRenovacao: observacoes,
+      atualizadoEm: new Date()
+    }, { merge: true });
+  } catch (error) {
+    console.error("Erro ao atribuir analista e observações:", error);
+    throw error;
+  }
+};
+
+// ============================================================================
+// 4. SUBCOLEÇÕES: INSTRUMENTOS CONTRATUAIS
+// ============================================================================
+export const adicionarInstrumento = async (contratoId, dadosInstrumento) => {
+  try {
+    const idSeguro = String(contratoId).trim().replace(/\//g, '-');
+    const novaRef = doc(collection(db, 'contratos', idSeguro, 'instrumentos'));
+
+    await setDoc(novaRef, {
+      ...dadosInstrumento,
+      criadoEm: new Date()
+    });
+
+    // Atualização de vigência oficial se o instrumento alterar o termo final
+    if (dadosInstrumento.dataVigencia) {
+      const contratoRef = doc(db, 'contratos', idSeguro);
+      await setDoc(contratoRef, {
+        vigenciaOficial: dadosInstrumento.dataVigencia,
+        atualizadoEm: new Date()
+      }, { merge: true });
+    }
+  } catch (error) {
+    console.error("Erro ao adicionar instrumento:", error);
+    throw error;
+  }
+};
+
+export const removerInstrumento = async (contratoId, instrumentoId) => {
+  try {
+    const idSeguro = String(contratoId).trim().replace(/\//g, '-');
+    const instRef = doc(db, 'contratos', idSeguro, 'instrumentos', instrumentoId);
+    await deleteDoc(instRef);
+  } catch (error) {
+    console.error("Erro ao remover instrumento:", error);
+    throw error;
+  }
+};
+
+// ============================================================================
+// 5. SUBCOLEÇÕES: FISCAIS E AUTOCOMPLETAR GLOBAL
+// ============================================================================
+export const adicionarFiscal = async (contratoId, dadosFiscal) => {
+  try {
+    const idSeguro = String(contratoId).trim().replace(/\//g, '-');
+    const novaRef = doc(collection(db, 'contratos', idSeguro, 'fiscais'));
+
+    await setDoc(novaRef, {
+      ...dadosFiscal,
+      criadoEm: new Date()
     });
   } catch (error) {
     console.error("Erro ao adicionar fiscal:", error);
@@ -265,281 +201,308 @@ export const adicionarFiscal = async (contratoId, fiscal) => {
   }
 };
 
-// 3. NOVA FUNÇÃO: Varre a base inteira e extrai uma lista limpa e única de servidores
+export const editarFiscal = async (contratoId, fiscalId, dadosAtualizados) => {
+  try {
+    const idSeguro = String(contratoId).trim().replace(/\//g, '-');
+    const fiscalRef = doc(db, 'contratos', idSeguro, 'fiscais', fiscalId);
+
+    await setDoc(fiscalRef, {
+      ...dadosAtualizados,
+      atualizadoEm: new Date()
+    }, { merge: true });
+  } catch (error) {
+    console.error("Erro ao atualizar fiscal:", error);
+    throw error;
+  }
+};
+
+export const removerFiscal = async (contratoId, fiscalId) => {
+  try {
+    const idSeguro = String(contratoId).trim().replace(/\//g, '-');
+    const fiscalRef = doc(db, 'contratos', idSeguro, 'fiscais', fiscalId);
+    await deleteDoc(fiscalRef);
+  } catch (error) {
+    console.error("Erro ao remover fiscal:", error);
+    throw error;
+  }
+};
+
 export const obterFiscaisCadastradosGlobal = async () => {
   try {
-    const snapshot = await getDocs(collectionGroup(db, 'fiscais'));
-    const mapaFiscaisUnicos = new Map(); // <-- CORRIGIDO AQUI (Sem espaço)
+    const contratosSnap = await getDocs(collection(db, 'contratos'));
+    const mapaUnicos = new Map();
 
-    snapshot.forEach(docSnap => {
-      const f = docSnap.data();
-      const nome = f.colaborador || f.nome;
-      const email = f.servidorEmail || f.email;
+    for (const cDoc of contratosSnap.docs) {
+      const fiscaisSnap = await getDocs(collection(db, 'contratos', cDoc.id, 'fiscais'));
+      fiscaisSnap.forEach((fDoc) => {
+        const data = fDoc.data();
+        const nome = (data.colaborador || data.nome || '').trim();
+        const email = (data.servidorEmail || data.email || '').trim();
 
-      if (nome && email) {
-        const chaveUnica = nome.trim().toUpperCase();
-        // Se o servidor ainda não está no mapa, adiciona (evita duplicados)
-        if (!mapaFiscaisUnicos.has(chaveUnica)) {
-          mapaFiscaisUnicos.set(chaveUnica, {
-            nome: chaveUnica,
-            email: email.trim().toLowerCase()
+        if (nome && !mapaUnicos.has(nome.toUpperCase())) {
+          mapaUnicos.set(nome.toUpperCase(), {
+            nome: nome.toUpperCase(),
+            email: email.toLowerCase()
           });
         }
-      }
-    });
+      });
+    }
 
-    // Retorna a lista ordenada alfabeticamente para o painel de sugestões
-    return Array.from(mapaFiscaisUnicos.values()).sort((a, b) => a.nome.localeCompare(b.nome));
+    return Array.from(mapaUnicos.values()).sort((a, b) => a.nome.localeCompare(b.nome));
   } catch (error) {
-    console.error("Erro ao construir banco de dados de autocompletar:", error);
+    console.error("Erro ao buscar histórico de fiscais:", error);
     return [];
   }
 };
 
+// ============================================================================
+// 6. UTILITÁRIOS ADMINISTRATIVOS: IMPORTAÇÃO E EXCLUSÃO EM LOTE
+// ============================================================================
+export const importarContratosCSV = async (linhasContratos) => {
+  try {
+    const batch = writeBatch(db);
+    let adicionados = 0;
 
-// --- HOOK DE ESCUTA EM TEMPO REAL DE USUÁRIOS ---
-export function useUsuarios() {
-  const [usuarios, setUsuarios] = useState([]);
+    for (const contrato of linhasContratos) {
+      const proaRaw = contrato.PROA || contrato.proa;
+      if (!proaRaw) continue;
+
+      const proaLimpo = proaRaw.trim();
+      const idSeguro = proaLimpo.replace(/\//g, '-');
+      const contratoRef = doc(db, 'contratos', idSeguro);
+
+      let valorTratado = 0;
+      const valorRaw = contrato.VALOR || contrato.valorOriginal || contrato.valor;
+      if (valorRaw) {
+        const strValor = valorRaw.toString().replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
+        valorTratado = parseFloat(strValor) || 0;
+      }
+
+      let dataVigencia = null;
+      const fimContratoRaw = contrato.FIMDOCONTRATO || contrato.fimDoContrato;
+      if (fimContratoRaw && fimContratoRaw.trim() && fimContratoRaw !== 'NaN') {
+        const partes = fimContratoRaw.trim().split('/');
+        if (partes.length === 3) {
+          dataVigencia = new Date(partes[2], partes[1] - 1, partes[0], 12, 0, 0);
+        }
+      }
+
+      const dadosContrato = {
+        id: idSeguro,
+        proaOriginal: proaLimpo,
+        proa: proaLimpo,
+        fpe: (contrato.FPE || contrato.fpe || "").toString().trim(),
+        objeto: (contrato.OBJETO || contrato.objeto || "").toString().trim(),
+        classificacao: (contrato.CLASSIFICAÇÃO || contrato.classificacao || "Não Classificado").toString().trim(),
+        tipoServico: (contrato['TIPO SERVIÇO'] || contrato.tipoServico || "Geral").toString().trim(),
+        fornecedorNome: (contrato.CONTRATADA || contrato.fornecedorNome || "Não Informado").toString().trim(),
+        valorOriginal: valorTratado,
+        valorTotal: valorTratado,
+        fimDoContrato: dataVigencia,
+        emRenovacao: false,
+        criadoEm: new Date(),
+        atualizadoEm: new Date(),
+        statusContrato: ""
+      };
+
+      batch.set(contratoRef, dadosContrato, { merge: true });
+      adicionados++;
+    }
+
+    await batch.commit();
+    return adicionados;
+  } catch (error) {
+    console.error("Erro crítico na importação do lote:", error);
+    throw error;
+  }
+};
+
+export const excluirContratosEmMassa = async (listaProas) => {
+  try {
+    let totalExcluido = 0;
+    const contratosSnap = await getDocs(collection(db, 'contratos'));
+
+    for (const proa of listaProas) {
+      const proaBuscado = proa.trim();
+
+      const docEncontrado = contratosSnap.docs.find((d) => {
+        const dados = d.data();
+        return (
+          d.id === proaBuscado.replace(/\//g, '-') ||
+          d.id === encodeURIComponent(proaBuscado) ||
+          dados.proaOriginal === proaBuscado ||
+          dados.proa === proaBuscado
+        );
+      });
+
+      if (!docEncontrado) {
+        console.warn(`PROA '${proaBuscado}' não encontrado, pulando...`);
+        continue;
+      }
+
+      const idRealFirebase = docEncontrado.id;
+      const contratoRef = doc(db, 'contratos', idRealFirebase);
+
+      // Limpeza profunda de subcoleções (fiscais e instrumentos)
+      const fiscaisSnap = await getDocs(collection(db, 'contratos', idRealFirebase, 'fiscais'));
+      for (const fDoc of fiscaisSnap.docs) {
+        await deleteDoc(fDoc.ref);
+      }
+
+      const instSnap = await getDocs(collection(db, 'contratos', idRealFirebase, 'instrumentos'));
+      for (const iDoc of instSnap.docs) {
+        await deleteDoc(iDoc.ref);
+      }
+
+      // Exclusão do contrato pai
+      await deleteDoc(contratoRef);
+      totalExcluido++;
+      console.log(`[LIXEIRA] Contrato ${proaBuscado} (ID: ${idRealFirebase}) removido com histórico.`);
+    }
+
+    return totalExcluido;
+  } catch (error) {
+    console.error("Erro na exclusão em massa:", error);
+    throw error;
+  }
+};
+// ============================================================================
+// 7. MÓDULO DE FORNECEDORES (CRUD)
+// ============================================================================
+export const useFornecedores = () => {
+  const [fornecedores, setFornecedores] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    const q = query(collection(db, 'usuarios'));
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const dados = querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
-      setUsuarios(dados);
-      setLoading(false);
-    });
+    const q = query(collection(db, 'fornecedores'));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const lista = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
+        setFornecedores(lista);
+        setLoading(false);
+      },
+      (err) => {
+        console.error("Erro ao buscar fornecedores:", err);
+        setError(err.message);
+        setLoading(false);
+      }
+    );
+
     return () => unsubscribe();
   }, []);
 
-  return { usuarios, loading };
-}
-
-// --- CADASTRO/PRÉ-AUTORIZAÇÃO DE USUÁRIOS (APENAS ADMIN) ---
-export const salvarUsuarioPreAutorizado = async (dados, perfilLogado) => {
-  if (perfilLogado !== 'ADMINISTRADOR') {
-    throw new Error("Operação negada: Apenas ADMINISTRADORES podem gerenciar usuários.");
-  }
-
-  const emailId = dados.email.toLowerCase().trim();
-  const userRef = doc(db, 'usuarios', emailId);
-
-  await setDoc(userRef, {
-    email: emailId,
-    nome: dados.nome.toUpperCase().trim(),
-    perfil: dados.perfil, // 'ADMINISTRADOR' ou 'OPERADOR'
-    status: dados.status || 'Pendente',
-    criadoEm: new Date()
-  }, { merge: true });
+  return { fornecedores, loading, error };
 };
 
-// --- TRAVA DE SEGURANÇA MÁXIMA NAS EXCLUSÕES ---
-const verificarPermissaoExclusao = (perfilLogado) => {
-  if (perfilLogado !== 'ADMINISTRADOR') {
-    throw new Error("ACESSO NEGADO: Operadores não possuem permissão para excluir registros.");
-  }
-};
-
-// Atualize a sua função de remover fornecedor adicionando a trava:
-export const removerFornecedor = async (fornecedorId, perfilLogado) => {
-  verificarPermissaoExclusao(perfilLogado);
-  const fornRef = doc(db, 'fornecedores', fornecedorId);
-  await deleteDoc(fornRef);
-};
-
-// MANTER APENAS ESTA VERSÃO CONSOLIDADA COM SEGURANÇA NO SEU useFirestore.js:
-export const removerInstrumento = async (contratoId, instrumentoId) => {
+export const salvarFornecedor = async (dadosFornecedor) => {
   try {
-    // 1. Captura o e-mail do usuário que está logado no momento
-    const emailAtual = auth.currentUser?.email;
-    if (!emailAtual) {
-      throw new Error("Sessão expirada. Faça login novamente.");
-    }
+    // Sanitiza CNPJ/CPF ou nome para servir de ID previsível
+    const docId = (dadosFornecedor.cnpj || dadosFornecedor.id || dadosFornecedor.nome || '')
+      .toString()
+      .replace(/[^a-zA-Z0-9]/g, '_')
+      .trim();
 
-    // 2. Busca o perfil correspondente na coleção 'usuarios'
-    const userRef = doc(db, 'usuarios', emailAtual.toLowerCase().trim());
-    const userSnap = await getDoc(userRef);
-    const perfil = userSnap.data()?.perfil?.toUpperCase()?.trim();
+    const fornecedorRef = docId 
+      ? doc(db, 'fornecedores', docId) 
+      : doc(collection(db, 'fornecedores'));
 
-    // 3. Validação de Segurança da DAC: Impede operadores comuns de apagarem o histórico
-    if (perfil !== 'ADMINISTRADOR') {
-      throw new Error("ACESSO NEGADO: Apenas Administradores podem excluir instrumentos contratuais.");
-    }
-
-    // 4. Executa a exclusão na subcoleção de aditivos
-    const instRef = doc(db, 'contratos', contratoId, 'instrumentos', instrumentoId);
-    await deleteDoc(instRef);
-    
-    // 5. GATILHO CRÍTICO: Aciona a nova calculadora linear para abater o valor/prazo do contrato pai
-    await sincronizarPrazosEValores(contratoId);
-
-  } catch (error) {
-    console.error("Falha na validação de exclusão:", error);
-    throw error;
-  }
-};
-
-// --- MOTOR DE REGRAS DE NEGÓCIO DA DAC/SOP ---
-export const sincronizarPrazosEValores = async (contratoId) => {
-  try {
-    const contratoRef = doc(db, 'contratos', contratoId);
-    const instRef = collection(db, 'contratos', contratoId, 'instrumentos');
-    
-    // 1. Pega os dados brutos de nascimento do contrato
-    const contratoSnap = await getDoc(contratoRef);
-    if (!contratoSnap.exists()) return;
-    const cDados = contratoSnap.data();
-
-    // Ponto de partida original (Garantia caso não existam aditivos ainda)
-    let valorCalculado = parseFloat(cDados.valorOriginal || cDados.valor || 0);
-    
-    let dataNascimentoRaw = cDados.dataVigenciaOriginal || cDados.fimDoContrato || cDados.dataVigencia || null;
-    let dataCalculadaObj = dataNascimentoRaw ? (dataNascimentoRaw.toDate ? dataNascimentoRaw.toDate() : new Date(dataNascimentoRaw)) : null;
-
-    let houveRescisao = false;
-
-    // 2. Varre os instrumentos: O valor informado SUBSTITUI o anterior (imutabilidade linear)
-    const snapshot = await getDocs(instRef);
-    
-    // Convertemos o snapshot em array e ordenamos por data de criação (ou ID) para garantir a ordem cronológica dos fatos
-    const docsOrdenados = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-    
-    // Se houver campo criadoEm, usamos para garantir a esteira correta de evolução do contrato
-    docsOrdenados.sort((a, b) => {
-      const timeA = a.criadoEm?.toDate ? a.criadoEm.toDate().getTime() : 0;
-      const timeB = b.criadoEm?.toDate ? b.criadoEm.toDate().getTime() : 0;
-      return timeA - timeB;
-    });
-
-    docsOrdenados.forEach((inst) => {
-      const valInst = parseFloat(inst.valor || 0);
-
-      // NOVA REGRA SIMPLIFICADA: Se marcou que altera valor (seja aditivo ou supressão),
-      // o valor do instrumento passa a ser o NOVO VALOR REAL do contrato.
-      if (inst.alteracoes?.valor || inst.alteracoes?.supressao || inst.tipo === 'Contrato') {
-        if (valInst > 0) {
-          valorCalculado = valInst; // Substituição direta e pura!
-        }
-      } else if (!inst.alteracoes && valInst > 0) {
-        // Retrocompatibilidade para dados legados do CSV
-        valorCalculado = valInst;
-      }
-
-      // Regra de Prazo: Se o instrumento alterou o prazo e trouxe nova data, ela substitui a linha do tempo
-      if (inst.alteracoes?.prazo && inst.dataVigencia) {
-        dataCalculadaObj = inst.dataVigencia.toDate ? inst.dataVigencia.toDate() : new Date(inst.dataVigencia);
-      } else if (!inst.alteracoes && inst.dataVigencia) {
-        // Retrocompatibilidade
-        dataCalculadaObj = inst.dataVigencia.toDate ? inst.dataVigencia.toDate() : new Date(inst.dataVigencia);
-      }
-
-      // Termo de Rescisão: Encerra o contrato imediatamente na data estipulada
-      if (inst.tipo === 'Termo de Rescisão') {
-        houveRescisao = true;
-        if (inst.dataVigencia) {
-          dataCalculadaObj = inst.dataVigencia.toDate ? inst.dataVigencia.toDate() : new Date(inst.dataVigencia);
-        }
-      }
-    });
-
-    // 3. Recalcula o Estágio obrigatório baseado na fotografia final
-    let diasRestantes = null;
-    let statusFinal = 'NÃO ATRIBUÍDO';
-
-    if (dataCalculadaObj) {
-      const hoje = new Date();
-      hoje.setHours(0, 0, 0, 0);
-      const venc = new Date(dataCalculadaObj);
-      venc.setHours(0, 0, 0, 0);
-
-      const diff = Math.ceil((venc - hoje) / (1000 * 60 * 60 * 24));
-      diasRestantes = diff;
-
-      if (houveRescisao || diff < 0) {
-        statusFinal = 'NÃO VIGENTE';
-      } else if (diff <= 90) {
-        statusFinal = `ALERTA (${diff} DIAS)`;
-      } else {
-        statusFinal = 'VIGENTE';
-      }
-    }
-
-    // 4. Grava a verdade atualizada na raiz do contrato pai
-    await updateDoc(contratoRef, {
-      valorTotal: valorCalculado,
-      vigenciaOficial: dataCalculadaObj,
-      diasRestantes: diasRestantes,
-      statusContrato: statusFinal,
+    await setDoc(fornecedorRef, {
+      ...dadosFornecedor,
       atualizadoEm: new Date()
-    });
+    }, { merge: true });
 
-    console.log(`[DAC] Contrato ${contratoId} recalculado por substituição. Novo teto: R$ ${valorCalculado}`);
-
+    return fornecedorRef.id;
   } catch (error) {
-    console.error("Erro no motor de substituição: ", error);
-  }
-};
-
-// MANTER APENAS ESTA VERSÃO NO SEU useFirestore.js:
-export const adicionarInstrumento = async (contratoId, instrumento) => {
-  try {
-    const instRef = collection(db, 'contratos', contratoId, 'instrumentos');
-    await addDoc(instRef, { ...instrumento, criadoEm: new Date() });
-    
-    // Esse é o gatilho que faz a mágica de somar/subtrair e recalcular o estágio
-    await sincronizarPrazosEValores(contratoId); 
-  } catch (error) {
+    console.error("Erro ao salvar fornecedor:", error);
     throw error;
   }
 };
 
-// --- FUNÇÃO PARA TOCAR O FLAG REVISADO RAPIDAMENTE VIA GRID ---
-export const alternarRevisadoContrato = async (contratoId, statusAtual) => {
-  const contratoRef = doc(db, 'contratos', contratoId);
-  await updateDoc(contratoRef, {
-    revisado: !statusAtual,
-    atualizadoEm: new Date()
-  });
-};
-
-// --- FUNÇÃO PARA TOCAR O FLAG EM RENOVAÇÃO VIA MODAL/GRID ---
-export const alternarRenovacaoContrato = async (contratoId, statusAtual) => {
-  const contratoRef = doc(db, 'contratos', contratoId);
-  await updateDoc(contratoRef, {
-    emRenovacao: !statusAtual,
-    atualizadoEm: new Date()
-  });
-};
-
-export const executarFaxinaTabelaContratos = async () => {
+export const removerFornecedor = async (fornecedorId) => {
   try {
-    const contratosRef = collection(db, 'contratos');
-    const snapshot = await getDocs(contratosRef);
-    
-    let totalProcessados = 0;
-
-    // Roda a esteira de atualização em paralelo para ir super rápido
-    const tarefas = snapshot.docs.map(async (docSnapshot) => {
-      const docRef = doc(db, 'contratos', docSnapshot.id);
-      
-      // 1. Remove os resquícios do campo estático antigo
-      await updateDoc(docRef, {
-        estagio: deleteField(),
-        estágio: deleteField()
-      });
-
-      // 2. DISPARO DE RECONSTRUÇÃO: Força o motor a recalcular o status real 
-      // baseado nos instrumentos existentes na subcoleção
-      await sincronizarPrazosEValores(docSnapshot.id);
-      
-      totalProcessados++;
-    });
-
-    await Promise.all(tarefas);
-    return totalProcessados;
-
+    const fornecedorRef = doc(db, 'fornecedores', fornecedorId);
+    await deleteDoc(fornecedorRef);
   } catch (error) {
-    console.error("Erro na sincronização em massa:", error);
+    console.error("Erro ao remover fornecedor:", error);
     throw error;
   }
 };
+
+// Alias de segurança para evitar quebras caso algum modal use excluirFornecedor
+export const excluirFornecedor = removerFornecedor;
+
+// ============================================================================
+// 8. MÓDULO DE USUÁRIOS E PRÉ-AUTORIZAÇÃO (CONTROLE DE ACESSOS)
+// ============================================================================
+export const useUsuarios = () => {
+  const [usuarios, setUsuarios] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const q = query(collection(db, 'usuarios'));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const lista = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
+        setUsuarios(lista);
+        setLoading(false);
+      },
+      (err) => {
+        console.error("Erro ao listar usuários:", err);
+        setError(err.message);
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  return { usuarios, loading, error };
+};
+
+export const salvarUsuarioPreAutorizado = async (dadosUsuario) => {
+  try {
+    const emailLimpo = (dadosUsuario.email || '').trim().toLowerCase();
+    if (!emailLimpo) throw new Error("E-mail institucional obrigatório.");
+
+    const docId = emailLimpo.replace(/[^a-zA-Z0-9]/g, '_');
+    const usuarioRef = doc(db, 'usuarios', docId);
+
+    await setDoc(usuarioRef, {
+      ...dadosUsuario,
+      email: emailLimpo,
+      atualizadoEm: new Date()
+    }, { merge: true });
+
+    return docId;
+  } catch (error) {
+    console.error("Erro ao salvar usuário pré-autorizado:", error);
+    throw error;
+  }
+};
+
+export const removerUsuarioPreAutorizado = async (usuarioId) => {
+  try {
+    const usuarioRef = doc(db, 'usuarios', usuarioId);
+    await deleteDoc(usuarioRef);
+  } catch (error) {
+    console.error("Erro ao remover usuário:", error);
+    throw error;
+  }
+};
+
+// Aliases comuns para prevenir divergências de nomenclatura
+export const salvarUsuario = salvarUsuarioPreAutorizado;
+export const removerUsuario = removerUsuarioPreAutorizado;
+export const excluirUsuario = removerUsuarioPreAutorizado;

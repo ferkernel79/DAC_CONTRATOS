@@ -91,7 +91,7 @@ const obterStatusReal = (c) => {
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   
   if (diffDays < 0) return 'NÃO VIGENTE';
-  if (diffDays <= 90) return `ALERTA (${diffDays} DIAS)`;
+  if (diffDays <= 120) return `ALERTA (${diffDays} DIAS)`;
   return 'VIGENTE';
 };
 
@@ -179,7 +179,7 @@ if (loading) return <div className="flex justify-center items-center h-full"><i 
           >
             <option value="Todos">Todos os Contratos</option>
             <option value="Vigente">Vigentes (Geral)</option>
-            <option value="Alerta">Em Alerta (⏱️ &lt; 90 Dias)</option>
+            <option value="Alerta">Em Alerta (⏱️ &lt; 120 Dias)</option>
             <option value="NaoVigente">Não Vigentes (Vencidos)</option>
             <option value="NaoAtribuido">Não Atribuídos (Sem Instrumento)</option>
           </select>
@@ -350,14 +350,29 @@ if (loading) return <div className="flex justify-center items-center h-full"><i 
 
                         {/* COLUNA 11: ALTERNAR RENOVAÇÃO */}
                         <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            onClick={() => alternarRenovacaoContrato(c.id, !!c.emRenovacao)}
-                            className={`px-2 py-0.5 rounded text-[9px] font-bold transition-all ${c.emRenovacao ? 'bg-amber-500 text-white' : 'bg-bg-body text-text-secondary border border-bg-hover hover:border-amber-500'}`}
-                          >
-                            {c.emRenovacao ? 'RENOVANDO' : 'RENOVAÇÃO?'}
-                          </button>
-                        </td>
+                        <button
+  type="button"
+  onClick={async (e) => {
+    e.stopPropagation();
+    console.log("ID do contrato a atualizar:", c.id);
+    console.log("Estado atual de emRenovacao:", c.emRenovacao);
+
+    try {
+      await alternarRenovacaoContrato(c.id, Boolean(c.emRenovacao));
+      alert(`Contrato ${c.id} atualizado com sucesso no Firestore!`);
+    } catch (err) {
+      alert("Falha ao gravar no Firestore: " + err.message);
+      console.error("Erro detalhado:", err);
+    }
+  }}
+  className={`px-2 py-0.5 rounded text-[9px] font-bold transition-all ${
+    c.emRenovacao 
+      ? 'bg-amber-500 text-white' 
+      : 'bg-bg-body text-text-secondary border border-bg-hover hover:border-amber-500'
+  }`}
+>
+  {c.emRenovacao ? 'RENOVANDO' : 'RENOVAÇÃO?'}
+</button>                         </td>
                       </tr>
                     );
                   })
