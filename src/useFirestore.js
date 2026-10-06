@@ -109,7 +109,7 @@ export const alternarRevisadoContrato = async (id, estadoAtual) => {
 // 3. ESTEIRA DE RENOVAÇÕES
 // ============================================================================
 export const alternarRenovacaoContrato = async (id, estadoAtual) => {
-  try {
+  //try {
     // 1. Usa o id exato do documento sem tentar alterar traço/barra na rota
     const docId = String(id).trim();
     const docRef = doc(db, 'contratos', docId);
@@ -122,11 +122,11 @@ export const alternarRenovacaoContrato = async (id, estadoAtual) => {
       atualizadoEm: new Date()
     }, { merge: true });
 
-    console.log(`[RENOVAÇÃO] Documento '${docId}' atualizado para emRenovacao = ${novoValor}`);
-  } catch (error) {
-    console.error("Erro em alternarRenovacaoContrato:", error);
-    throw error;
-  }
+//    console.log(`[RENOVAÇÃO] Documento '${docId}' atualizado para emRenovacao = ${novoValor}`);
+//  } catch (error) {
+//   console.error("Erro em alternarRenovacaoContrato:", error);
+//    throw error;
+//  }
 };
 
 export const atribuirAnalistaRenovacao = async (contratoId, nomeAnalista, observacoes = '') => {

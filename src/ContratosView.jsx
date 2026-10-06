@@ -359,10 +359,10 @@ if (loading) return <div className="flex justify-center items-center h-full"><i 
 
     try {
       await alternarRenovacaoContrato(c.id, Boolean(c.emRenovacao));
-      alert(`Contrato ${c.id} atualizado com sucesso no Firestore!`);
+      //alert(`Contrato ${c.id} atualizado com sucesso no Firestore!`);
     } catch (err) {
-      alert("Falha ao gravar no Firestore: " + err.message);
-      console.error("Erro detalhado:", err);
+      //alert("Falha ao gravar no Firestore: " + err.message);
+      //console.error("Erro detalhado:", err);
     }
   }}
   className={`px-2 py-0.5 rounded text-[9px] font-bold transition-all ${
